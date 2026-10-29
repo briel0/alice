@@ -45,3 +45,4 @@ Se o bot roda numa VM, rode o MCP **lá** por SSH, em vez de sincronizar arquivo
   - `add_to_inbox(item_text)`: captura rápida no INBOX.
   - `update_tasks(new_markdown_content, reason)`: reescreve o arquivo inteiro; só para reorganizações grandes.
   - `get_profile()`, `add_memory(fact, category)`, `get_memories()`.
+  - `create_card(title, category, description)`: cria um cartão no Planner. Só aparece com `PLANNER_API_URL` configurado.

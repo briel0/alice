@@ -38,7 +38,7 @@ Roda com systemd numa VM pequena (Ubuntu 24.04, 512 MB + swap bastam). Não prec
 
 ## Wrappers (`deploy/bin`)
 
-- `alice-mcp`: MCP em stdio como `alice` (`sudo -u alice`); não precisa de segredos.
+- `alice-mcp`: MCP em stdio como `alice` (`sudo -u alice`); não carrega `/etc/alice/alice.env`. Para o MCP também criar cartões no Planner, ponha só `PLANNER_API_URL` (e `PLANNER_INBOX_CATEGORY`, se usar) em `/opt/alice/app/.env` (dono `alice`, `600`). A URL não é segredo.
 - `alice-cli`: carrega `/etc/alice/alice.env` como root e desce para `alice` com `runuser`.
 - `alice-status`: imprime `tarefas.md`, a linha `<<<ALICE-MEMORIAS>>>` e `memorias_vivas.md` (usado pelo cabeçalho do `claude-mod`).
 - `alice-backup`: commit do que mudou em `data/` e push para o remoto privado.

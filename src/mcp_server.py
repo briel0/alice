@@ -10,6 +10,7 @@ Pode ser consumido por:
 
 from pathlib import Path
 from mcp.server.mcpserver import MCPServer
+from src import planner
 from src.config import DATA_DIR
 from src.storage import (
     add_task,
@@ -100,6 +101,12 @@ def tool_get_memories() -> str:
     if MEMORIES_FILE.exists():
         return MEMORIES_FILE.read_text(encoding="utf-8")
     return "Nenhuma memória viva registrada ainda."
+
+# Só existe quando o Planner está configurado (PLANNER_API_URL); como no Telegram, só cria cartões
+if planner.is_enabled():
+    @server.tool(name="create_card", description="Cria um cartão no Planner (app de quadros de projetos). category é parte do nome de uma categoria do Planner; vazio vai para a categoria de entrada. description é opcional. Só cria: não edita, não move, não apaga.")
+    def tool_create_card(title: str, category: str = "", description: str = "") -> str:
+        return planner.create_card(title, category, description)
 
 if __name__ == "__main__":
     # Quando executado diretamente (ex: via Claude Desktop ou terminal), roda em modo stdio
