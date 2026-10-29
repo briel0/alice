@@ -59,7 +59,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     msg = (
         f"ALICE online. 🧠✨\n"
         f"*(ALICE Lembra, Integra, Cobra e Executa)*\n\n"
-        f"Estou pronta como sua Chefe de Gabinete.\n"
+        f"Estou pronta como sua assistente pessoal.\n"
         f"• Mande texto ou áudio naturalmente (eu mantenho o contexto).\n"
         f"• `/tarefas` para ver seu arquivo Markdown completo.\n"
         f"• `/reset` para limpar o contexto da conversa ativa e começar do zero.{warning}"

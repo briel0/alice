@@ -4,7 +4,7 @@ Instruções para agentes de IA (Claude Code, Codex, Antigravity etc.) trabalhan
 
 ## O que é
 
-**ALICE**: bot de Telegram que atua como **chefe de gabinete** pessoal. Recebe texto/áudio, raciocina com Gemini e mantém tarefas em Markdown. Também expõe o mesmo estado por um servidor MCP.
+**ALICE**: bot de Telegram que atua como **assistente pessoal**. Recebe texto/áudio, raciocina com Gemini e mantém tarefas em Markdown. Também expõe o mesmo estado por um servidor MCP.
 
 ## Repositório público + dados privados (regra principal)
 

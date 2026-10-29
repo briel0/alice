@@ -27,7 +27,7 @@ BLUEPRINT_FILE = DATA_DIR / "blueprint.md"
 server = MCPServer(
     name="alice",
     version="1.0.0",
-    description="Servidor MCP da ALICE, chefe de gabinete e sistema operacional pessoal"
+    description="Servidor MCP da ALICE, assistente pessoal"
 )
 
 # --- RECURSOS (Resources) ---
@@ -46,7 +46,7 @@ def resource_profile() -> str:
 
 @server.resource("alice://blueprint")
 def resource_blueprint() -> str:
-    """Diretrizes operacionais e protocolos do Chefe de Gabinete."""
+    """Diretrizes operacionais e protocolos da assistente pessoal."""
     if BLUEPRINT_FILE.exists():
         return BLUEPRINT_FILE.read_text(encoding="utf-8")
     return "Blueprint não encontrado."

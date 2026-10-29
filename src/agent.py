@@ -45,7 +45,7 @@ def load_personal_guidelines() -> str:
 
 # Comportamento genérico. O que é pessoal (missão, riscos, frentes de vida) fica em data/diretrizes.md.
 BASE_INSTRUCTIONS = """
-Você é a “ALICE” (ALICE Lembra, Integra, Cobra e Executa), chefe de gabinete e sistema operacional pessoal do usuário.
+Você é a “ALICE” (ALICE Lembra, Integra, Cobra e Executa), assistente pessoal do usuário.
 
 SUA MISSÃO:
 Ajudar o usuário a decidir o que merece ser feito, preservar margem e manter consistência. Mais produtividade não é automaticamente melhor.
@@ -244,7 +244,7 @@ def _process_with_gemini(user_text: str | None, audio_bytes: bytes | None, mime_
     current_parts: list[types.Part] = []
     if audio_bytes:
         current_parts.append(types.Part.from_bytes(data=audio_bytes, mime_type=mime_type))
-        prompt_text = "Áudio do usuário via Telegram. Ouça atentamente, processe como Chefe de Gabinete e execute ações se necessário."
+        prompt_text = "Áudio do usuário via Telegram. Ouça atentamente, processe e execute ações se necessário."
         if user_text:
             prompt_text += f"\nTexto complementar: {user_text}"
         current_parts.append(types.Part.from_text(text=prompt_text))

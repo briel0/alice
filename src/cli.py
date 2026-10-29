@@ -1,4 +1,4 @@
-"""CLI interativa da ALICE (Chefe de Gabinete).
+"""CLI interativa da ALICE (Assistente Pessoal).
 
 Uso:
   uv run python -m src.cli                  -> chat interativo no terminal
@@ -119,7 +119,7 @@ def pt_date(now: datetime) -> str:
 def print_banner():
     inbox = len(inbox_items(read_tasks_markdown()))
     console.print()
-    console.print("[accent]●[/accent] [bold]ALICE[/bold]  [muted]chefe de gabinete[/muted]")
+    console.print("[accent]●[/accent] [bold]ALICE[/bold]  [muted]assistente pessoal[/muted]")
     console.print(
         f"  [muted]{pt_date(datetime.now())}   inbox {inbox} · memórias {count_memories()}[/muted]"
     )

@@ -1,7 +1,7 @@
 [project]
 name = "alice"
 version = "0.1.0"
-description = "ALICE: chefe de gabinete pessoal no Telegram, com tarefas em Markdown e servidor MCP"
+description = "ALICE: assistente pessoal no Telegram com tarefas em Markdown e servidor MCP"
 readme = "README.md"
 authors = [
     { name = "Gabriel Abreu" }

@@ -1,6 +1,6 @@
 # ALICE
 
-**ALICE** (ALICE Lembra, Integra, Cobra e Executa) é uma chefe de gabinete pessoal: um bot de Telegram que recebe texto e áudio, raciocina com o Gemini e mantém suas tarefas em Markdown. O mesmo estado fica disponível para outros agentes (Claude Code, Claude Desktop, Cursor etc.) por um servidor MCP.
+**ALICE** (ALICE Lembra, Integra, Cobra e Executa) é uma assistente pessoal: um bot de Telegram que recebe texto e áudio, raciocina com o Gemini e mantém suas tarefas em Markdown. O mesmo estado fica disponível para outros agentes (Claude Code, Claude Desktop, Cursor etc.) por um servidor MCP.
 
 ## Como funciona
 
