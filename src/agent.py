@@ -17,7 +17,7 @@ from src.config import (
     DATA_DIR,
     USER_NAME
 )
-from src import storage
+from src import planner, storage
 from src.storage import read_tasks_markdown
 from src.history import append_message, get_recent_history
 from src.guardrails import check_guardrails, record_token_usage
@@ -77,6 +77,16 @@ REGRAS PARA MEXER NO tarefas.md:
 - Só diga que algo foi feito depois que a ferramenta confirmar.
 """
 
+# Só entra no prompt quando o Planner está configurado (PLANNER_API_URL)
+PLANNER_RULES = """
+PLANNER (PROJETOS):
+- O usuário também usa o Planner, um app de quadros para projetos e visão de longo prazo.
+- tarefas.md é o tático: ações do dia, anotações rápidas, rotinas. Projetos, ideias grandes e coisas de vários passos vão para o Planner com `create_card(title, category, description)`.
+- Por aqui você só CRIA cartões no Planner. Organizar, mover, editar e apagar é com o usuário, no PC.
+- Se o usuário mandar um projeto de vários passos, crie um cartão para o projeto no Planner e, se houver, anote no tarefas.md só a próxima ação concreta.
+- Sem categoria clara, deixe `category` vazio: o cartão vai para a categoria de entrada do Planner.
+"""
+
 # Definição das ferramentas (as docstrings viram a descrição para o Gemini)
 def add_task(text: str, section: str = "INBOX") -> str:
     """Adiciona um item aberto ("- [ ] text") ao fim de uma seção do tarefas.md. section é parte do título, ex.: INBOX, Estudos, AGUARDANDO."""
@@ -104,6 +114,17 @@ def add_memory(fact: str, category: str = "geral") -> str:
     with open(MEMORIES_FILE, "a", encoding="utf-8") as f:
         f.write(f"- [{category.upper()}] {fact}\n")
     return f"Memória registrada: [{category}] {fact}"
+
+def create_card(title: str, category: str = "", description: str = "") -> str:
+    """Cria um cartão no Planner (app de quadros de projetos). Para projetos, ideias grandes e coisas de vários passos. category é parte do nome de uma categoria do Planner; vazio vai para a categoria de entrada. description é opcional. Só cria: não edita, não move, não apaga."""
+    return planner.create_card(title, category, description)
+
+def available_tools() -> list:
+    """Ferramentas oferecidas ao Gemini; create_card só quando o Planner está configurado."""
+    tools = [add_task, complete_task, move_task, remove_task, get_current_tasks, add_memory]
+    if planner.is_enabled():
+        tools.append(create_card)
+    return tools
 
 ITEM_PROPERTY = {"type": "string", "description": "Texto (ou trecho único) do item como aparece no arquivo"}
 SECTION_PROPERTY = {"type": "string", "description": "Parte do título da seção, ex.: INBOX, Estudos, AGUARDANDO"}
@@ -175,6 +196,8 @@ def execute_tool(name: str, args: dict) -> str:
         return add_memory(args.get("fact", ""), args.get("category", "geral"))
     elif name == "get_current_tasks":
         return get_current_tasks()
+    elif name == "create_card" and planner.is_enabled():
+        return create_card(args.get("title", ""), args.get("category", ""), args.get("description", ""))
     return f"Ferramenta desconhecida: {name}"
 
 def _process_with_claude(user_text: str, system_prompt: str, history: list[dict]) -> str:
@@ -255,7 +278,7 @@ def _process_with_gemini(user_text: str | None, audio_bytes: bytes | None, mime_
 
     config = types.GenerateContentConfig(
         system_instruction=system_prompt,
-        tools=[add_task, complete_task, move_task, remove_task, get_current_tasks, add_memory],
+        tools=available_tools(),
         temperature=0.3,
         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
     )
@@ -298,9 +321,10 @@ def process_user_message(
     memories = load_memories()
     guidelines = load_personal_guidelines()
     user_line = f"O nome do usuário é {USER_NAME}.\n" if USER_NAME else ""
+    planner_rules = PLANNER_RULES if planner.is_enabled() else ""
 
     system_prompt = (
-        f"{BASE_INSTRUCTIONS}\n{user_line}{TASK_RULES}\n"
+        f"{BASE_INSTRUCTIONS}\n{user_line}{TASK_RULES}{planner_rules}\n"
         f"[DIRETRIZES PESSOAIS]\n{guidelines}\n\n"
         f"[PERFIL E PRINCÍPIOS DO USUÁRIO]\n{user_profile}\n\n"
         f"[MEMÓRIAS VIVAS APRENDIDAS]\n{memories}\n\n"

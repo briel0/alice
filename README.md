@@ -9,6 +9,8 @@
 - **MCP** (`python -m src.mcp_server`): expõe tarefas, perfil e memórias como ferramentas para outros agentes.
 - **Dados** (`data/`): arquivos Markdown simples. Ficam **fora** deste repositório; veja abaixo.
 
+Opcional: com `PLANNER_API_URL`, a ALICE também cria cartões no [Planner](https://github.com/briel0/planner) (só cria; organizar fica no Planner).
+
 O agente do Telegram nunca reescreve o arquivo de tarefas inteiro: ele só faz edições de uma linha (`add_task`, `complete_task`, `move_task`, `remove_task`), então um modelo pequeno não consegue apagar suas tarefas por engano.
 
 ## Instalação

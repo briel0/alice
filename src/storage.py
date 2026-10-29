@@ -46,7 +46,7 @@ def save_tasks_markdown(content: str, commit_message: str = "chore: update tasks
 # Cada operação mexe em uma única linha e devolve uma mensagem para o agente.
 # Assim um modelo nunca precisa reescrever o arquivo inteiro (e não consegue apagá-lo).
 
-def _normalize(text: str) -> str:
+def normalize(text: str) -> str:
     """Minúsculas, sem acentos e sem emojis, para comparar textos com tolerância."""
     text = unicodedata.normalize("NFKD", text)
     text = "".join(c for c in text if c.isascii() and not unicodedata.combining(c))
@@ -59,8 +59,8 @@ def list_sections() -> list[str]:
 
 def _find_section(lines: list[str], section: str) -> int | str:
     """Índice da linha do título da seção, ou mensagem de erro."""
-    wanted = _normalize(section)
-    matches = [i for i, line in enumerate(lines) if HEADING_RE.match(line) and wanted in _normalize(line)]
+    wanted = normalize(section)
+    matches = [i for i, line in enumerate(lines) if HEADING_RE.match(line) and wanted in normalize(line)]
     if len(matches) == 1:
         return matches[0]
     sections = ", ".join(list_sections())
@@ -71,12 +71,12 @@ def _find_section(lines: list[str], section: str) -> int | str:
 
 def _find_item(lines: list[str], item: str, only_open: bool) -> int | str:
     """Índice da linha do item, ou mensagem de erro (não achou / ambíguo)."""
-    wanted = _normalize(item)
+    wanted = normalize(item)
     candidates = []
     for i, line in enumerate(lines):
         match = ITEM_RE.match(line)
         if match and not (only_open and match.group(1) != " "):
-            candidates.append((i, _normalize(match.group(2))))
+            candidates.append((i, normalize(match.group(2))))
 
     exact = [i for i, text in candidates if text == wanted]
     partial = [i for i, text in candidates if wanted and wanted in text]

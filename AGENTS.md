@@ -38,6 +38,7 @@ src/mcp_server.py  servidor MCP (stdio)
 src/cli.py         CLI no terminal
 src/guardrails.py  limites diários de uso
 src/history.py     histórico da conversa (data/historico.jsonl)
+src/planner.py     cliente da API do Planner (opcional): só cria cartões
 examples/          modelos genéricos dos arquivos de data/
 deploy/            serviço systemd, wrappers e backup para rodar numa VM
 claude-mod/        identidade visual da ALICE dentro do Claude Code
