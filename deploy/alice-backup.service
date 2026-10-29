@@ -1,0 +1,10 @@
+[Unit]
+Description=ALICE - backup diário de data/ para o GitHub
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=alice
+Environment=TZ=America/Sao_Paulo
+ExecStart=/opt/alice/bin/alice-backup

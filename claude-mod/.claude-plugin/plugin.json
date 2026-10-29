@@ -1,0 +1,6 @@
+{
+  "name": "alice-skin",
+  "version": "0.1.0",
+  "description": "Identidade visual da ALICE quando o Claude Code roda como ela (alice.cmd)",
+  "types": "./types/index.d.ts"
+}

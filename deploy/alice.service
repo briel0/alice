@@ -1,0 +1,29 @@
+[Unit]
+Description=ALICE - assistente pessoal no Telegram
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=alice
+Group=alice
+WorkingDirectory=/opt/alice/app
+EnvironmentFile=/etc/alice/alice.env
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=TZ=America/Sao_Paulo
+ExecStartPre=/opt/alice/app/.venv/bin/python -c "from src.config import ALLOWED_TELEGRAM_USER_ID, TELEGRAM_BOT_TOKEN, GEMINI_API_KEY, ANTHROPIC_API_KEY; assert ALLOWED_TELEGRAM_USER_ID and ALLOWED_TELEGRAM_USER_ID > 0, 'Configure ALLOWED_TELEGRAM_USER_ID'; assert TELEGRAM_BOT_TOKEN, 'Configure TELEGRAM_BOT_TOKEN'; assert GEMINI_API_KEY or ANTHROPIC_API_KEY, 'Configure uma chave de API'"
+ExecStart=/opt/alice/app/.venv/bin/python /opt/alice/app/main.py
+Restart=always
+RestartSec=10
+TimeoutStopSec=45
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

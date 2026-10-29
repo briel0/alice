@@ -1,0 +1,22 @@
+[project]
+name = "alice"
+version = "0.1.0"
+description = "ALICE: chefe de gabinete pessoal no Telegram, com tarefas em Markdown e servidor MCP"
+readme = "README.md"
+authors = [
+    { name = "Gabriel Abreu" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "anthropic>=2.3.0",
+    "google-genai>=2.33.0",
+    "mcp>=2.3.0",
+    "openai>=3.41.0",
+    "python-dotenv>=1.2.4",
+    "python-telegram-bot>=22.8",
+    "rich>=15.0.0",
+]
+
+[tool.uv]
+# Não é um pacote instalável: roda com "python -m src..." a partir da raiz
+package = false

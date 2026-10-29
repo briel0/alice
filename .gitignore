@@ -1,0 +1,23 @@
+# Ambientes virtuais e dependências
+.venv/
+env/
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Configurações e segredos sensíveis
+.env
+*.token
+*.pem
+*.key
+
+# Dados pessoais: nunca entram neste repositório (ficam no repositório privado de dados)
+data/
+
+# Logs e temporários
+logs/
+.tmp/

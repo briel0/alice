@@ -1,0 +1,6 @@
+#!/bin/sh
+# Status para o cabeçalho do claude-mod: tarefas, separador, memórias
+cat /opt/alice/app/data/tarefas.md 2>/dev/null
+echo "<<<ALICE-MEMORIAS>>>"
+cat /opt/alice/app/data/memorias_vivas.md 2>/dev/null
+exit 0

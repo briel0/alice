@@ -1,0 +1,3 @@
+#!/bin/sh
+# MCP da ALICE em stdio, rodando como alice (chamado via: sudo -u alice)
+cd /opt/alice/app && exec /opt/alice/app/.venv/bin/python -m src.mcp_server

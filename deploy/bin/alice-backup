@@ -1,0 +1,7 @@
+#!/bin/sh
+# Envia data/ (um repositório git próprio, privado) para o remoto (roda como alice)
+set -e
+cd /opt/alice/app/data
+git add -A
+git diff --cached --quiet || git commit -q -m "backup: $(date '+%Y-%m-%d %H:%M')"
+git push -q origin main
