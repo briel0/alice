@@ -83,3 +83,7 @@ Skills ficam em `.agents/skills/` (fonte única; `.claude/skills/` só aponta pa
 5. Melhoria futura: registrar em cada mensagem de `data/historico.jsonl` o canal de origem (`telegram` ou `cli`).
 6. Interface de voz — primeiro objetivo: conversar com a ALICE pelo microfone e alto-falante do PC, com respostas faladas e acesso às tarefas e memórias. Não implementar nesta etapa.
 7. Ideia futura, após validar a voz no PC: Echo Dot ou hardware próprio como interface de voz (Alexa Skill, privacidade, custos, backend 24/7). Não implementar nesta etapa.
+8. Planner: hoje `src/planner.py` só cria cartões. Próxima ferramenta: ler os cartões que existem (por categoria e dentro de um cartão), para a ALICE responder perguntas sobre eles. **Prioridade da sessão de 31/10/2026.**
+9. Backup do banco do Planner: hoje só o snapshot da VM cobre. Avaliar um `pg_dump` diário junto do backup de `data/` (`deploy/bin/alice-backup`), indo para o repositório privado de dados.
+10. Registrar gastos pela ALICE. **Prioridade da sessão de 31/10/2026.** Nada decidido ainda: onde guardar (API própria como o Treinos, schema no Postgres da VPS, planilha), categorias, forma de pagamento, parcelas. Começar pelo minimundo, decidindo uma coisa de cada vez.
+11. Treinos: ler os dados (o que foi feito num dia, histórico de um exercício, peso corporal). Decisão adiada para depois do teste em produção; opção recomendada: `get_workout(dia)`, `exercise_history(exercício, n)` e `get_body_weights(desde, até)`.
