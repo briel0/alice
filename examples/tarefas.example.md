@@ -11,4 +11,6 @@
 
 ## 🔁 ROTINAS & PISOS DE MANUTENÇÃO
 
+## 🛒 LISTA DE COMPRAS
+
 ## 💡 ALGUM DIA / TALVEZ (Ideias & Backlog Congelado)
