@@ -31,3 +31,6 @@ CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-3-5-haiku-latest")
 # Planner (opcional): API de quadros de projetos. Sem URL, a ferramenta create_card não é oferecida.
 PLANNER_API_URL = os.getenv("PLANNER_API_URL", "").strip().rstrip("/")
 PLANNER_INBOX_CATEGORY = os.getenv("PLANNER_INBOX_CATEGORY", "Inbox").strip() or "Inbox"
+
+# Treinos (opcional): API de registro de treinos e peso corporal. Sem URL, as ferramentas de treino não são oferecidas.
+TREINOS_API_URL = os.getenv("TREINOS_API_URL", "").strip().rstrip("/")

@@ -39,6 +39,7 @@ src/cli.py         CLI no terminal
 src/guardrails.py  limites diários de uso
 src/history.py     histórico da conversa (data/historico.jsonl)
 src/planner.py     cliente da API do Planner (opcional): só cria cartões
+src/treinos.py     cliente da API do Treinos (opcional): registra e tira exercícios do treino do dia, grava peso
 examples/          modelos genéricos dos arquivos de data/
 deploy/            serviço systemd, wrappers e backup para rodar numa VM
 claude-mod/        identidade visual da ALICE dentro do Claude Code
@@ -51,6 +52,7 @@ claude-mod/        identidade visual da ALICE dentro do Claude Code
 - Imports absolutos a partir de `src` (`from src.config import ...`).
 - Mantenha simples. Não adicione frameworks, camadas ou features que não foram pedidas.
 - Configuração nova vai em `src/config.py` lida do `.env`, e a chave correspondente vai em `.env.example`.
+- Integrações opcionais (Planner, Treinos) só entram nas ferramentas e no prompt quando a URL delas está no `.env` (`PLANNER_API_URL`, `TREINOS_API_URL`).
 - O agente do Telegram só edita tarefas linha a linha (`add_task`, `complete_task`, `move_task`, `remove_task`). Não devolva ao Gemini uma ferramenta que reescreva o arquivo inteiro; reescrita completa só existe no MCP (`update_tasks`).
 
 ## Segurança

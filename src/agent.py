@@ -17,7 +17,8 @@ from src.config import (
     DATA_DIR,
     USER_NAME
 )
-from src import planner, storage
+from src import planner, storage, treinos
+from src.treinos import Serie
 from src.storage import read_tasks_markdown
 from src.history import append_message, get_recent_history
 from src.guardrails import check_guardrails, record_token_usage
@@ -87,6 +88,22 @@ PLANNER (PROJETOS):
 - Sem categoria clara, deixe `category` vazio: o cartão vai para a categoria de entrada do Planner.
 """
 
+# Só entra no prompt quando a API de treinos está configurada (TREINOS_API_URL)
+TREINOS_RULES = """
+TREINOS:
+- Registre só os exercícios da mensagem atual: os das mensagens anteriores do histórico já foram registrados (ou recusados) e registrar de novo duplica.
+- Registre cada exercício feito com `log_exercise(exercise, sets, day)`, uma chamada por exercício, todas na mesma resposta quando vierem juntos. Os exercícios entram no treino do dia (criado na primeira chamada).
+- `exercise` é o nome ou apelido como o usuário falou ("supino", "paralela"); a API acha no catálogo.
+- `sets` tem um item por série: "4x10 com 60" são 4 séries de reps=10, load_kg=60; "10, 8, 6 com 20" são 3 séries. Preencha só o que o exercício usa: musculação reps e load_kg; peso corporal reps (load_kg só com carga extra, assistance_kg com máquina ou elástico); por tempo duration_sec; cardio distance_m e duration_sec. Unilateral: side "left" ou "right".
+- Sem carga num exercício com pesos, não invente: pergunte.
+- `day` vazio é hoje; para outro dia, AAAA-MM-DD.
+- Peso corporal: `log_body_weight(weight_kg, day)`.
+- Se a ferramenta disser que não achou o exercício ou que recusou as séries, pergunte ao usuário em vez de chutar.
+- Você não cria exercícios no catálogo. Se um exercício não existir, sugira o nome mais parecido da lista que a ferramenta devolveu ou combine com o usuário deixar de fora; nunca ofereça criar.
+- Para corrigir um registro errado, use `remove_exercise(exercise, day)` (tira a ocorrência mais recente do exercício no treino do dia) e, se for o caso, registre de novo com os valores certos. Só tire quando o usuário pedir ou confirmar a correção.
+- Depois de registrar, mostre em poucas linhas o que a ferramenta confirmou (nome do exercício no catálogo e séries), para o usuário conferir.
+"""
+
 # Definição das ferramentas (as docstrings viram a descrição para o Gemini)
 def add_task(text: str, section: str = "INBOX") -> str:
     """Adiciona um item aberto ("- [ ] text") ao fim de uma seção do tarefas.md. section é parte do título, ex.: INBOX, Estudos, AGUARDANDO."""
@@ -119,11 +136,25 @@ def create_card(title: str, category: str = "", description: str = "") -> str:
     """Cria um cartão no Planner (app de quadros de projetos). Para projetos, ideias grandes e coisas de vários passos. category é parte do nome de uma categoria do Planner; vazio vai para a categoria de entrada. description é opcional. Só cria: não edita, não move, não apaga."""
     return planner.create_card(title, category, description)
 
+def log_exercise(exercise: str, sets: list[Serie], day: str = "") -> str:
+    """Registra um exercício feito, com as séries, no treino do dia (cria o treino se ainda não houver). exercise é o nome ou apelido do exercício. sets tem um item por série, com só as medidas que o exercício usa. day é AAAA-MM-DD; vazio é hoje."""
+    return treinos.log_exercise(exercise, sets, day)
+
+def remove_exercise(exercise: str, day: str = "") -> str:
+    """Tira do treino do dia a ocorrência mais recente de um exercício, com as séries. Para corrigir registros errados. day é AAAA-MM-DD; vazio é hoje."""
+    return treinos.remove_exercise(exercise, day)
+
+def log_body_weight(weight_kg: float, day: str = "") -> str:
+    """Registra o peso corporal do usuário no dia (substitui se já houver). day é AAAA-MM-DD; vazio é hoje."""
+    return treinos.log_body_weight(weight_kg, day)
+
 def available_tools() -> list:
-    """Ferramentas oferecidas ao Gemini; create_card só quando o Planner está configurado."""
+    """Ferramentas oferecidas ao Gemini; as do Planner e do Treinos só quando configurados."""
     tools = [add_task, complete_task, move_task, remove_task, get_current_tasks, add_memory]
     if planner.is_enabled():
         tools.append(create_card)
+    if treinos.is_enabled():
+        tools += [log_exercise, remove_exercise, log_body_weight]
     return tools
 
 ITEM_PROPERTY = {"type": "string", "description": "Texto (ou trecho único) do item como aparece no arquivo"}
@@ -198,6 +229,12 @@ def execute_tool(name: str, args: dict) -> str:
         return get_current_tasks()
     elif name == "create_card" and planner.is_enabled():
         return create_card(args.get("title", ""), args.get("category", ""), args.get("description", ""))
+    elif name == "log_exercise" and treinos.is_enabled():
+        return log_exercise(args.get("exercise", ""), args.get("sets") or [], args.get("day", ""))
+    elif name == "remove_exercise" and treinos.is_enabled():
+        return remove_exercise(args.get("exercise", ""), args.get("day", ""))
+    elif name == "log_body_weight" and treinos.is_enabled():
+        return log_body_weight(args.get("weight_kg", 0), args.get("day", ""))
     return f"Ferramenta desconhecida: {name}"
 
 def _process_with_claude(user_text: str, system_prompt: str, history: list[dict]) -> str:
@@ -322,9 +359,10 @@ def process_user_message(
     guidelines = load_personal_guidelines()
     user_line = f"O nome do usuário é {USER_NAME}.\n" if USER_NAME else ""
     planner_rules = PLANNER_RULES if planner.is_enabled() else ""
+    treinos_rules = TREINOS_RULES if treinos.is_enabled() else ""
 
     system_prompt = (
-        f"{BASE_INSTRUCTIONS}\n{user_line}{TASK_RULES}{planner_rules}\n"
+        f"{BASE_INSTRUCTIONS}\n{user_line}{TASK_RULES}{planner_rules}{treinos_rules}\n"
         f"[DIRETRIZES PESSOAIS]\n{guidelines}\n\n"
         f"[PERFIL E PRINCÍPIOS DO USUÁRIO]\n{user_profile}\n\n"
         f"[MEMÓRIAS VIVAS APRENDIDAS]\n{memories}\n\n"
