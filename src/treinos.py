@@ -138,11 +138,18 @@ def log_exercise(exercise: str, sets: list[dict], day: str = "") -> str:
                 "sets": [_set_body(dict(serie)) for serie in sets],
             }
             workout = _workout_of_day(client, workout_day)
+            last = workout["exercises"][-1] if workout and workout["exercises"] else None
+            continues_last = last is not None and last["exerciseId"] == found["id"]
             if workout is None:
                 # Treino de hoje começa agora; num dia passado, sem a hora certa, fica ao meio-dia
                 started = datetime.now() if workout_day == date.today() else datetime.combine(workout_day, time(12))
                 body = {"id": str(uuid.uuid7()), "startedAt": started.astimezone().isoformat(), "exercises": [entry]}
                 response = client.post("/api/workouts", json=body)
+            elif continues_last:
+                # "Mais uma série" do exercício em andamento; voltar a ele depois de outro é uma entrada nova
+                response = client.post(
+                    f"/api/workouts/{workout['id']}/exercises/{last['id']}/sets", json={"sets": entry["sets"]}
+                )
             else:
                 response = client.post(f"/api/workouts/{workout['id']}/exercises", json=entry)
             if response.status_code == 400:
@@ -156,10 +163,14 @@ def log_exercise(exercise: str, sets: list[dict], day: str = "") -> str:
 
     when = _when(workout_day)
     described = "; ".join(_describe_set(serie) for serie in entry["sets"])
-    return f"Registrado no treino de {when}: {found['name']} — {len(entry['sets'])} série(s): {described}"
+    registered = f"Registrado no treino de {when}: {found['name']} — {len(entry['sets'])} série(s): {described}"
+    if continues_last:
+        total = len(last["sets"]) + len(entry["sets"])
+        return f"{registered}. Somadas às anteriores, {found['name']} agora tem {total} séries seguidas."
+    return registered
 
 def remove_exercise(exercise: str, day: str = "") -> str:
-    """Tira do treino do dia a ocorrência mais recente do exercício, com as séries. Treino vazio é apagado."""
+    """Tira do treino do dia a ocorrência mais recente do exercício, com TODAS as séries dela. Treino vazio é apagado."""
     exercise = " ".join(exercise.split())
     if not exercise:
         return "Diga qual exercício tirar."

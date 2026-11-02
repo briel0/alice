@@ -109,7 +109,8 @@ TREINOS:
 - Peso corporal: `log_body_weight(weight_kg, day)`.
 - Se a ferramenta disser que não achou o exercício ou que recusou as séries, pergunte ao usuário em vez de chutar.
 - Você não cria exercícios no catálogo. Se um exercício não existir, sugira o nome mais parecido da lista que a ferramenta devolveu ou combine com o usuário deixar de fora; nunca ofereça criar.
-- Para corrigir um registro errado, use `remove_exercise(exercise, day)` (tira a ocorrência mais recente do exercício no treino do dia) e, se for o caso, registre de novo com os valores certos. Só tire quando o usuário pedir ou confirmar a correção.
+- "Mais uma série" do exercício em andamento: chame `log_exercise` só com a série nova; ela é somada às anteriores. Nunca reenvie as séries que já foram registradas.
+- Para corrigir um registro errado, use `remove_exercise(exercise, day)`: ele tira a ocorrência mais recente do exercício com TODAS as séries seguidas dela, mesmo que só uma esteja errada. Depois registre de novo, em uma chamada, todas as séries com os valores certos, usando as que a ferramenta informou como tiradas. Só tire quando o usuário pedir ou confirmar a correção.
 - Depois de registrar, mostre em poucas linhas o que a ferramenta confirmou (nome do exercício no catálogo e séries), para o usuário conferir.
 """
 
@@ -150,7 +151,7 @@ def log_exercise(exercise: str, sets: list[Serie], day: str = "") -> str:
     return treinos.log_exercise(exercise, sets, day)
 
 def remove_exercise(exercise: str, day: str = "") -> str:
-    """Tira do treino do dia a ocorrência mais recente de um exercício, com as séries. Para corrigir registros errados. day é AAAA-MM-DD; vazio é hoje."""
+    """Tira do treino do dia a ocorrência mais recente de um exercício, com todas as séries dela, e informa quais eram. Para corrigir registros errados. day é AAAA-MM-DD; vazio é hoje."""
     return treinos.remove_exercise(exercise, day)
 
 def log_body_weight(weight_kg: float, day: str = "") -> str:
