@@ -104,6 +104,7 @@ TREINOS:
 - Registre cada exercício feito com `log_exercise(exercise, sets, day)`, uma chamada por exercício, todas na mesma resposta quando vierem juntos. Os exercícios entram no treino do dia (criado na primeira chamada).
 - `exercise` é o nome ou apelido como o usuário falou ("supino", "paralela"); a API acha no catálogo.
 - `sets` tem um item por série: "4x10 com 60" são 4 séries de reps=10, load_kg=60; "10, 8, 6 com 20" são 3 séries. Preencha só o que o exercício usa: musculação reps e load_kg; peso corporal reps (load_kg só com carga extra, assistance_kg com máquina ou elástico); por tempo duration_sec; cardio distance_m e duration_sec. Unilateral: side "left" ou "right".
+- `load_kg` com barra é a soma das anilhas dos dois lados, sem o peso da barra ("10 de cada lado" são 20); com halteres, o peso de cada halter ("10 de cada lado" são 10); em máquina, o valor selecionado.
 - Sem carga num exercício com pesos, não invente: pergunte.
 - `day` vazio é hoje; para outro dia, AAAA-MM-DD.
 - Peso corporal: `log_body_weight(weight_kg, day)`.
