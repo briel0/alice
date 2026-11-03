@@ -42,6 +42,7 @@ Roda com systemd numa VM pequena (Ubuntu 24.04, 512 MB + swap bastam). Não prec
 - `alice-cli`: carrega `/etc/alice/alice.env` como root e desce para `alice` com `runuser`.
 - `alice-status`: imprime `tarefas.md`, a linha `<<<ALICE-MEMORIAS>>>` e `memorias_vivas.md` (usado pelo cabeçalho do `claude-mod`).
 - `alice-backup`: commit do que mudou em `data/` e push para o remoto privado.
+- `alice-dump-treinos`: exporta o schema do Treinos com `pg_dump` para `data/backups/treinos.sql` (roda como root, antes do `alice-backup`).
 
 ## Backup
 
@@ -50,6 +51,8 @@ Roda com systemd numa VM pequena (Ubuntu 24.04, 512 MB + swap bastam). Não prec
 - A chave da VM é uma deploy key com escrita **só** no repositório de dados.
 - Rodar na hora: `sudo systemctl start alice-backup`. Ver resultado: `journalctl -u alice-backup -n 20`.
 - Snapshots automáticos do provedor são uma segunda camada barata.
+- O dump do Treinos vai junto. Se ele falhar, o backup de `data/` segue com o arquivo anterior e a falha aparece só no journal: confira de vez em quando a data do arquivo.
+- Restaurar o dump num banco vazio: `sudo -u postgres createdb <banco>`, depois `sudo cat data/backups/treinos.sql | sudo -u postgres psql -d <banco> -v ON_ERROR_STOP=1`. Ele não recria o usuário `treinos` nem as permissões.
 
 ## Atualizar o código
 

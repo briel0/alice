@@ -7,4 +7,7 @@ Wants=network-online.target
 Type=oneshot
 User=alice
 Environment=TZ=America/Sao_Paulo
+# "+" roda como root, para o dump usar o usuário treinos sem a alice acessar o banco. "-" não deixa um dump
+# com falha impedir o backup de data/; a falha fica no journal.
+ExecStartPre=-+/opt/alice/bin/alice-dump-treinos
 ExecStart=/opt/alice/bin/alice-backup

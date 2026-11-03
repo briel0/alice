@@ -1,0 +1,10 @@
+#!/bin/sh
+# Exporta o schema do Treinos para data/backups/, que o alice-backup envia ao remoto (roda como root).
+# Um dump que falha não troca o arquivo anterior. A chave fixa evita um commit por dia sem mudança nos dados.
+set -e
+dest=/opt/alice/app/data/backups
+tmp=$(mktemp)
+trap 'rm -f "$tmp"' EXIT
+runuser -u treinos -- pg_dump -d planner -n treinos --no-owner --no-privileges --restrict-key=aliceBackup > "$tmp"
+install -d -o alice -g alice -m 700 "$dest"
+install -o alice -g alice -m 600 "$tmp" "$dest/treinos.sql"
