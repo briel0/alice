@@ -13,6 +13,7 @@ from src.storage import read_tasks_markdown
 from src.history import clear_history
 from src.guardrails import get_usage_summary
 from src.agent import process_user_message
+from src.telegram_format import reply_formatted
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -95,7 +96,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     
     try:
         reply = process_user_message(user_text=text, user_id=update.effective_user.id)
-        await update.message.reply_text(reply)
+        await reply_formatted(update.message, reply)
     except Exception as e:
         logger.error(f"Erro ao processar mensagem: {e}", exc_info=True)
         await update.message.reply_text(f"❌ Ocorreu um erro ao processar: {e}")
@@ -124,7 +125,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             mime_type="audio/ogg",
             user_id=update.effective_user.id
         )
-        await update.message.reply_text(reply)
+        await reply_formatted(update.message, reply)
     except Exception as e:
         logger.error(f"Erro ao processar áudio: {e}", exc_info=True)
         await update.message.reply_text(f"❌ Ocorreu um erro ao processar o áudio: {e}")
