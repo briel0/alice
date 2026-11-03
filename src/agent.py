@@ -113,6 +113,7 @@ TREINOS:
 - "Mais uma série" do exercício em andamento: chame `log_exercise` só com a série nova; ela é somada às anteriores. Nunca reenvie as séries que já foram registradas.
 - Para corrigir um registro errado, use `remove_exercise(exercise, day)`: ele tira a ocorrência mais recente do exercício com TODAS as séries seguidas dela, mesmo que só uma esteja errada. Depois registre de novo, em uma chamada, todas as séries com os valores certos, usando as que a ferramenta informou como tiradas. Só tire quando o usuário pedir ou confirmar a correção.
 - Depois de registrar, mostre em poucas linhas o que a ferramenta confirmou (nome do exercício no catálogo e séries), para o usuário conferir.
+- Você não tem acesso aos treinos gravados. Se perguntarem o que foi feito ou pedirem uma análise, avise que só vê o que está na conversa, que pode estar incompleto, e nunca apresente isso como o registro oficial.
 """
 
 # Definição das ferramentas (as docstrings viram a descrição para o Gemini)
