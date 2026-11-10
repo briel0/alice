@@ -40,6 +40,7 @@ src/guardrails.py  limites diários de uso
 src/history.py     histórico da conversa (data/historico.jsonl)
 src/planner.py     cliente da API do Planner (opcional): só cria cartões
 src/treinos.py     cliente da API do Treinos (opcional): registra e tira exercícios do treino do dia, grava peso
+src/cfpick.py      sorteio de problemas do Codeforces para treino de ICPC (opcional, CF_HANDLE); estado em data/cfpick/, cache em .cache/
 examples/          modelos genéricos dos arquivos de data/
 deploy/            serviço systemd, wrappers e backup para rodar numa VM
 claude-mod/        identidade visual da ALICE dentro do Claude Code
@@ -52,7 +53,8 @@ claude-mod/        identidade visual da ALICE dentro do Claude Code
 - Imports absolutos a partir de `src` (`from src.config import ...`).
 - Mantenha simples. Não adicione frameworks, camadas ou features que não foram pedidas.
 - Configuração nova vai em `src/config.py` lida do `.env`, e a chave correspondente vai em `.env.example`.
-- Integrações opcionais (Planner, Treinos) só entram nas ferramentas e no prompt quando a URL delas está no `.env` (`PLANNER_API_URL`, `TREINOS_API_URL`).
+- Integrações opcionais (Planner, Treinos, Codeforces) só entram nas ferramentas e no prompt quando estão configuradas no `.env` (`PLANNER_API_URL`, `TREINOS_API_URL`, `CF_HANDLE`).
+- O catálogo de gyms do Codeforces (`gym-discover`) só é montado pela linha de comando: é demorado e nunca vira ferramenta do Gemini.
 - O agente do Telegram só edita tarefas linha a linha (`add_task`, `complete_task`, `move_task`, `remove_task`). Não devolva ao Gemini uma ferramenta que reescreva o arquivo inteiro; reescrita completa só existe no MCP (`update_tasks`).
 
 ## Segurança

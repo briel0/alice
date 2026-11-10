@@ -17,7 +17,7 @@ from src.config import (
     DATA_DIR,
     USER_NAME
 )
-from src import planner, storage, treinos
+from src import cfpick, planner, storage, treinos
 from src.treinos import Serie
 from src.storage import read_tasks_markdown
 from src.history import append_message, get_recent_history
@@ -116,6 +116,18 @@ TREINOS:
 - Você não tem acesso aos treinos gravados. Se perguntarem o que foi feito ou pedirem uma análise, avise que só vê o que está na conversa, que pode estar incompleto, e nunca apresente isso como o registro oficial.
 """
 
+# Só entra no prompt quando o Codeforces está configurado (CF_HANDLE)
+CFPICK_RULES = """
+TREINO DE ICPC (CODEFORCES):
+- O usuário treina com problemas sorteados do Codeforces e de gyms de ICPC. Quando ele pedir um problema, use `cf_pick`. Só passe `source` ("cf" ou "gym") se ele pedir uma fonte explicitamente.
+- Mande o link e diga se é revisão (problema em que ele falhou antes). O sorteio é cego de propósito: nunca comente dificuldade, rating, tópico, técnica ou dica, nem dê palpite sobre o problema.
+- Se a ferramenta disser que já há um problema em aberto (pending), mande o mesmo link e diga há quanto tempo ele está aberto.
+- `cf_record(solved=True)` só quando ele disser que passou (AC) sem ver editorial nem solução. Se viu editorial ou solução, ou desistiu, é `solved=False`. Mensagem ambígua ("terminei", "acabei") pede confirmação antes de registrar.
+- Se a ferramenta disser que não achou o AC, repasse e não registre falha no lugar.
+- `cf_skip` só para descartar sem contar (enunciado quebrado, sem tempo, já conhecia o problema). Desistir não é pular.
+- Depois de registrar, diga numa frase se contou como acerto, em quantos minutos, e se passou do tempo-limite (late). Os números da escada só aparecem quando ele pedir o status.
+"""
+
 # Definição das ferramentas (as docstrings viram a descrição para o Gemini)
 def add_task(text: str, section: str = "INBOX") -> str:
     """Adiciona um item aberto ("- [ ] text") ao fim de uma seção do tarefas.md. section é parte do título, ex.: INBOX, Estudos, AGUARDANDO."""
@@ -160,13 +172,31 @@ def log_body_weight(weight_kg: float, day: str = "") -> str:
     """Registra o peso corporal do usuário no dia (substitui se já houver). day é AAAA-MM-DD; vazio é hoje."""
     return treinos.log_body_weight(weight_kg, day)
 
+def cf_pick(source: str = "") -> str:
+    """Sorteia o próximo problema de treino (Codeforces ou gym de ICPC) e devolve o link; se já houver um em aberto, devolve esse. source: "cf", "gym" ou vazio para sortear."""
+    return cfpick.as_tool_result(cfpick.pick, source)
+
+def cf_record(solved: bool) -> str:
+    """Fecha o problema em aberto. solved=True só se o usuário passou (AC) sem ver editorial nem solução; o AC é conferido no Codeforces."""
+    return cfpick.as_tool_result(cfpick.record, solved)
+
+def cf_skip() -> str:
+    """Descarta o problema em aberto sem contar como acerto nem falha."""
+    return cfpick.as_tool_result(cfpick.skip)
+
+def cf_status() -> str:
+    """Status do treino: nível atual de cada escada, acertos recentes, tentativas na semana e revisões pendentes."""
+    return cfpick.as_tool_result(cfpick.status)
+
 def available_tools() -> list:
-    """Ferramentas oferecidas ao Gemini; as do Planner e do Treinos só quando configurados."""
+    """Ferramentas oferecidas ao Gemini; as do Planner, do Treinos e do Codeforces só quando configurados."""
     tools = [add_task, complete_task, move_task, remove_task, get_current_tasks, add_memory]
     if planner.is_enabled():
         tools.append(create_card)
     if treinos.is_enabled():
         tools += [log_exercise, remove_exercise, log_body_weight]
+    if cfpick.is_enabled():
+        tools += [cf_pick, cf_record, cf_skip, cf_status]
     return tools
 
 ITEM_PROPERTY = {"type": "string", "description": "Texto (ou trecho único) do item como aparece no arquivo"}
@@ -247,6 +277,15 @@ def execute_tool(name: str, args: dict) -> str:
         return remove_exercise(args.get("exercise", ""), args.get("day", ""))
     elif name == "log_body_weight" and treinos.is_enabled():
         return log_body_weight(args.get("weight_kg", 0), args.get("day", ""))
+    elif name.startswith("cf_") and cfpick.is_enabled():
+        if name == "cf_pick":
+            return cf_pick(args.get("source") or "")
+        elif name == "cf_record":
+            return cf_record(args.get("solved") is True)
+        elif name == "cf_skip":
+            return cf_skip()
+        elif name == "cf_status":
+            return cf_status()
     return f"Ferramenta desconhecida: {name}"
 
 def _process_with_claude(user_text: str, system_prompt: str, history: list[dict]) -> str:
@@ -372,9 +411,10 @@ def process_user_message(
     user_line = f"O nome do usuário é {USER_NAME}.\n" if USER_NAME else ""
     planner_rules = PLANNER_RULES if planner.is_enabled() else ""
     treinos_rules = TREINOS_RULES if treinos.is_enabled() else ""
+    cfpick_rules = CFPICK_RULES if cfpick.is_enabled() else ""
 
     system_prompt = (
-        f"{BASE_INSTRUCTIONS}\n{user_line}{TASK_RULES}{planner_rules}{treinos_rules}\n"
+        f"{BASE_INSTRUCTIONS}\n{user_line}{TASK_RULES}{planner_rules}{treinos_rules}{cfpick_rules}\n"
         f"[DIRETRIZES PESSOAIS]\n{guidelines}\n\n"
         f"[PERFIL E PRINCÍPIOS DO USUÁRIO]\n{user_profile}\n\n"
         f"[MEMÓRIAS VIVAS APRENDIDAS]\n{memories}\n\n"

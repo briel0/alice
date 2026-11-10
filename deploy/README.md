@@ -42,6 +42,7 @@ Roda com systemd numa VM pequena (Ubuntu 24.04, 512 MB + swap bastam). Não prec
 - `alice-cli`: carrega `/etc/alice/alice.env` como root e desce para `alice` com `runuser`.
 - `alice-status`: imprime `tarefas.md`, a linha `<<<ALICE-MEMORIAS>>>` e `memorias_vivas.md` (usado pelo cabeçalho do `claude-mod`).
 - `alice-backup`: commit do que mudou em `data/` e push para o remoto privado.
+- `alice-cfpick`: seletor de problemas do Codeforces pela linha de comando, como `alice` com o `alice.env`. O catálogo de gyms não se atualiza sozinho: rode `sudo /opt/alice/bin/alice-cfpick gym-discover --dry` para conferir a lista e `sudo /opt/alice/bin/alice-cfpick gym-discover` para baixar os gyms novos (demora; se a rede cair, rodar de novo continua de onde parou). Precisa de `CF_API_KEY` e `CF_API_SECRET`.
 - `alice-dump-treinos`: exporta o schema do Treinos com `pg_dump` para `data/backups/treinos.sql` (roda como root, antes do `alice-backup`).
 
 ## Backup

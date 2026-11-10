@@ -34,3 +34,9 @@ PLANNER_INBOX_CATEGORY = os.getenv("PLANNER_INBOX_CATEGORY", "Inbox").strip() or
 
 # Treinos (opcional): API de registro de treinos e peso corporal. Sem URL, as ferramentas de treino não são oferecidas.
 TREINOS_API_URL = os.getenv("TREINOS_API_URL", "").strip().rstrip("/")
+
+# Codeforces (opcional): sorteio de problemas para treino de ICPC. Sem handle, as ferramentas não são oferecidas.
+# Chave e segredo da API só são usados para baixar placares de gym (src.cfpick gym-discover, pela linha de comando).
+CF_HANDLE = os.getenv("CF_HANDLE", "").strip()
+CF_API_KEY = os.getenv("CF_API_KEY", "").strip()
+CF_API_SECRET = os.getenv("CF_API_SECRET", "").strip()

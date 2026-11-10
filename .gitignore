@@ -21,3 +21,4 @@ data/
 # Logs e temporários
 logs/
 .tmp/
+.cache/
