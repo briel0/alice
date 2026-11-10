@@ -116,17 +116,8 @@ TREINOS:
 - Você não tem acesso aos treinos gravados. Se perguntarem o que foi feito ou pedirem uma análise, avise que só vê o que está na conversa, que pode estar incompleto, e nunca apresente isso como o registro oficial.
 """
 
-# Só entra no prompt quando o Codeforces está configurado (CF_HANDLE)
-CFPICK_RULES = """
-TREINO DE ICPC (CODEFORCES):
-- O usuário treina com problemas sorteados do Codeforces e de gyms de ICPC. Quando ele pedir um problema, use `cf_pick`. Só passe `source` ("cf" ou "gym") se ele pedir uma fonte explicitamente.
-- Mande o link e diga se é revisão (problema em que ele falhou antes). O sorteio é cego de propósito: nunca comente dificuldade, rating, tópico, técnica ou dica, nem dê palpite sobre o problema.
-- Se a ferramenta disser que já há um problema em aberto (pending), mande o mesmo link e diga há quanto tempo ele está aberto.
-- `cf_record(solved=True)` só quando ele disser que passou (AC) sem ver editorial nem solução. Se viu editorial ou solução, ou desistiu, é `solved=False`. Mensagem ambígua ("terminei", "acabei") pede confirmação antes de registrar.
-- Se a ferramenta disser que não achou o AC, repasse e não registre falha no lugar.
-- `cf_skip` só para descartar sem contar (enunciado quebrado, sem tempo, já conhecia o problema). Desistir não é pular.
-- Depois de registrar, diga numa frase se contou como acerto, em quantos minutos, e se passou do tempo-limite (late). Os números da escada só aparecem quando ele pedir o status.
-"""
+# Só entra no prompt quando o Codeforces está configurado (CF_HANDLE); o texto é o mesmo das instruções do MCP
+CFPICK_RULES = cfpick.RULES
 
 # Definição das ferramentas (as docstrings viram a descrição para o Gemini)
 def add_task(text: str, section: str = "INBOX") -> str:

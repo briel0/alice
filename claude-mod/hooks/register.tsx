@@ -104,6 +104,14 @@ function describeTool(tool: string, input: Record<string, unknown>): string {
       return 'consultou o perfil'
     case 'mcp__alice__get_memories':
       return 'consultou as memórias'
+    case 'mcp__alice__cf_pick':
+      return 'sorteou um problema'
+    case 'mcp__alice__cf_record':
+      return input.solved === true ? 'registrou acerto no treino' : 'registrou falha no treino'
+    case 'mcp__alice__cf_skip':
+      return 'pulou o problema'
+    case 'mcp__alice__cf_status':
+      return 'consultou o treino'
     default:
       return tool.replace('mcp__alice__', '')
   }

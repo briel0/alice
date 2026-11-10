@@ -87,6 +87,19 @@ def is_enabled() -> bool:
     return bool(CF_HANDLE)
 
 
+# Regras para o modelo, usadas no prompt do bot e nas instruções do MCP
+RULES = """
+TREINO DE ICPC (CODEFORCES):
+- O usuário treina com problemas sorteados do Codeforces e de gyms de ICPC. Quando ele pedir um problema, use `cf_pick`; nunca escolha nem sugira um problema por conta própria. Só passe `source` ("cf" ou "gym") se ele pedir uma fonte explicitamente.
+- Mande só o link e diga se é revisão (problema em que ele falhou antes). O sorteio é cego de propósito: nunca abra o problema nem comente nome, enunciado, dificuldade, rating, tópico, técnica ou dica, nem dê palpite sobre ele.
+- Se a ferramenta disser que já há um problema em aberto (pending), mande o mesmo link e diga há quanto tempo ele está aberto.
+- `cf_record(solved=True)` só quando ele disser que passou (AC) sem ver editorial nem solução. Se viu editorial ou solução, ou desistiu, é `solved=False`. Mensagem ambígua ("terminei", "acabei") pede confirmação antes de registrar.
+- Se a ferramenta disser que não achou o AC, repasse e não registre falha no lugar.
+- `cf_skip` só para descartar sem contar (enunciado quebrado, sem tempo, já conhecia o problema). Desistir não é pular.
+- Depois de registrar, diga numa frase se contou como acerto, em quantos minutos, e se passou do tempo-limite (late). Os números da escada só aparecem quando ele pedir o status.
+"""
+
+
 # ---------------------------------------------------------------- API do CF
 _last_call = [0.0]
 

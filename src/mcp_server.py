@@ -10,7 +10,7 @@ Pode ser consumido por:
 
 from pathlib import Path
 from mcp.server.mcpserver import MCPServer
-from src import planner
+from src import cfpick, planner
 from src.config import DATA_DIR
 from src.storage import (
     add_task,
@@ -28,7 +28,8 @@ BLUEPRINT_FILE = DATA_DIR / "blueprint.md"
 server = MCPServer(
     name="alice",
     version="1.0.0",
-    description="Servidor MCP da ALICE, assistente pessoal"
+    description="Servidor MCP da ALICE, assistente pessoal",
+    instructions=cfpick.RULES if cfpick.is_enabled() else None,
 )
 
 # --- RECURSOS (Resources) ---
@@ -107,6 +108,24 @@ if planner.is_enabled():
     @server.tool(name="create_card", description="Cria um cartão no Planner (app de quadros de projetos). category é parte do nome de uma categoria do Planner; vazio vai para a categoria de entrada. description é opcional. Só cria: não edita, não move, não apaga.")
     def tool_create_card(title: str, category: str = "", description: str = "") -> str:
         return planner.create_card(title, category, description)
+
+# Só existe quando o Codeforces está configurado (CF_HANDLE); o catálogo de gyms fica só na linha de comando
+if cfpick.is_enabled():
+    @server.tool(name="cf_pick", description="Sorteia o próximo problema de treino de ICPC (Codeforces ou gym) e devolve só o link; se já houver um em aberto, devolve esse. Use sempre que o usuário pedir um problema, em vez de escolher um. source: \"cf\", \"gym\" ou vazio para sortear.")
+    def tool_cf_pick(source: str = "") -> str:
+        return cfpick.as_tool_result(cfpick.pick, source)
+
+    @server.tool(name="cf_record", description="Fecha o problema de treino em aberto. solved=True só se o usuário passou (AC) sem ver editorial nem solução; o AC é conferido no Codeforces.")
+    def tool_cf_record(solved: bool) -> str:
+        return cfpick.as_tool_result(cfpick.record, solved is True)
+
+    @server.tool(name="cf_skip", description="Descarta o problema de treino em aberto sem contar como acerto nem falha.")
+    def tool_cf_skip() -> str:
+        return cfpick.as_tool_result(cfpick.skip)
+
+    @server.tool(name="cf_status", description="Status do treino de ICPC: nível de cada escada, acertos recentes, tentativas na semana e revisões pendentes.")
+    def tool_cf_status() -> str:
+        return cfpick.as_tool_result(cfpick.status)
 
 if __name__ == "__main__":
     # Quando executado diretamente (ex: via Claude Desktop ou terminal), roda em modo stdio
