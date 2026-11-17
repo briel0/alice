@@ -10,7 +10,7 @@ Pode ser consumido por:
 
 from pathlib import Path
 from mcp.server.mcpserver import MCPServer
-from src import cfpick, planner
+from src import cfpick, planner, reminders
 from src.config import DATA_DIR
 from src.storage import (
     add_task,
@@ -102,6 +102,18 @@ def tool_get_memories() -> str:
     if MEMORIES_FILE.exists():
         return MEMORIES_FILE.read_text(encoding="utf-8")
     return "Nenhuma memória viva registrada ainda."
+
+@server.tool(name="add_reminder", description="Agenda um lembrete: a ALICE manda `text` ao usuário no Telegram no horário `when`, que é ISO 8601 com fuso e no futuro (ex.: 2026-11-18T09:00-03:00; o usuário está em America/Sao_Paulo). Para mudar um lembrete, cancele e crie outro.")
+def tool_add_reminder(text: str, when: str) -> str:
+    return reminders.create(text, when, "mcp")
+
+@server.tool(name="list_reminders", description="Lista os lembretes ainda não enviados, com id, horário e texto.")
+def tool_list_reminders() -> str:
+    return reminders.list_text()
+
+@server.tool(name="cancel_reminder", description="Cancela o lembrete pendente com esse id (veja os ids em list_reminders).")
+def tool_cancel_reminder(id: str) -> str:
+    return reminders.cancel(id)
 
 # Só existe quando o Planner está configurado (PLANNER_API_URL); como no Telegram, só cria cartões
 if planner.is_enabled():
