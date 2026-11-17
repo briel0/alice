@@ -1,3 +1,4 @@
+import asyncio
 import io
 import logging
 from telegram import Update, constants
@@ -95,7 +96,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=constants.ChatAction.TYPING)
     
     try:
-        reply = process_user_message(user_text=text, user_id=update.effective_user.id)
+        # Em outra thread: a chamada ao Gemini é síncrona e travaria o event loop (e o loop de lembretes)
+        reply = await asyncio.to_thread(process_user_message, user_text=text, user_id=update.effective_user.id)
         await reply_formatted(update.message, reply)
     except Exception as e:
         logger.error(f"Erro ao processar mensagem: {e}", exc_info=True)
@@ -119,7 +121,8 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=constants.ChatAction.TYPING)
         caption = update.message.caption or ""
-        reply = process_user_message(
+        reply = await asyncio.to_thread(
+            process_user_message,
             user_text=caption if caption else None,
             audio_bytes=audio_bytes,
             mime_type="audio/ogg",
