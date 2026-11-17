@@ -17,7 +17,7 @@ from src.config import (
     DATA_DIR,
     USER_NAME
 )
-from src import cfpick, planner, storage, treinos
+from src import cfpick, planner, reminders, storage, treinos
 from src.treinos import Serie
 from src.storage import read_tasks_markdown
 from src.history import append_message, get_recent_history
@@ -87,6 +87,16 @@ REGRAS PARA MEXER NO tarefas.md:
 - Só diga que algo foi feito depois que a ferramenta confirmar.
 """
 
+REMINDER_RULES = """
+LEMBRETES:
+- "Me lembra de X às/amanhã/sexta..." vira `add_reminder(text, when)`: a ALICE manda a mensagem sozinha no horário. Não confunda com tarefa: se o usuário não pediu para ser avisado num momento, é `add_task`.
+- `when` é a data e hora absolutas em ISO 8601 com fuso (ex.: 2026-11-18T09:00-03:00), calculadas a partir de "Agora" no estado operacional.
+- Sem hora dita pelo usuário: 09:00; "de manhã" 09:00; "de tarde" 14:00; "à noite" 20:00; "mais tarde" é daqui a 3 horas, no máximo às 22:00. Quando usar um desses padrões, diga na confirmação (ex.: "não disseste hora, pus 9h").
+- `text` é o que deve aparecer no aviso, curto e nas palavras do usuário ("Ligar pro banco").
+- Confirme com o dia da semana, a data e a hora que a ferramenta devolveu, para o usuário perceber se você entendeu errado.
+- Para ver os lembretes: `list_reminders()`. Para cancelar: `cancel_reminder(id)`, com o id da lista. Para mudar texto ou horário, cancele e crie outro.
+"""
+
 # Só entra no prompt quando o Planner está configurado (PLANNER_API_URL)
 PLANNER_RULES = """
 PLANNER (PROJETOS):
@@ -147,6 +157,18 @@ def add_memory(fact: str, category: str = "geral") -> str:
         f.write(f"- [{category.upper()}] {fact}\n")
     return f"Memória registrada: [{category}] {fact}"
 
+def add_reminder(text: str, when: str) -> str:
+    """Agenda um lembrete: a ALICE manda `text` ao usuário no Telegram no horário `when` (ISO 8601 com fuso, ex.: 2026-11-18T09:00-03:00, no futuro)."""
+    return reminders.create(text, when, "telegram")
+
+def list_reminders() -> str:
+    """Lista os lembretes ainda não enviados, com id, horário e texto."""
+    return reminders.list_text()
+
+def cancel_reminder(id: str) -> str:
+    """Cancela o lembrete pendente com esse id (veja os ids em list_reminders)."""
+    return reminders.cancel(id)
+
 def create_card(title: str, category: str = "", description: str = "") -> str:
     """Cria um cartão no Planner (app de quadros de projetos). Para projetos, ideias grandes e coisas de vários passos. category é parte do nome de uma categoria do Planner; vazio vai para a categoria de entrada. description é opcional. Só cria: não edita, não move, não apaga."""
     return planner.create_card(title, category, description)
@@ -181,7 +203,8 @@ def cf_status() -> str:
 
 def available_tools() -> list:
     """Ferramentas oferecidas ao Gemini; as do Planner, do Treinos e do Codeforces só quando configurados."""
-    tools = [add_task, complete_task, move_task, remove_task, get_current_tasks, add_memory]
+    tools = [add_task, complete_task, move_task, remove_task, get_current_tasks, add_memory,
+             add_reminder, list_reminders, cancel_reminder]
     if planner.is_enabled():
         tools.append(create_card)
     if treinos.is_enabled():
@@ -260,6 +283,12 @@ def execute_tool(name: str, args: dict) -> str:
         return add_memory(args.get("fact", ""), args.get("category", "geral"))
     elif name == "get_current_tasks":
         return get_current_tasks()
+    elif name == "add_reminder":
+        return add_reminder(args.get("text", ""), args.get("when", ""))
+    elif name == "list_reminders":
+        return list_reminders()
+    elif name == "cancel_reminder":
+        return cancel_reminder(args.get("id", ""))
     elif name == "create_card" and planner.is_enabled():
         return create_card(args.get("title", ""), args.get("category", ""), args.get("description", ""))
     elif name == "log_exercise" and treinos.is_enabled():
@@ -405,12 +434,13 @@ def process_user_message(
     cfpick_rules = CFPICK_RULES if cfpick.is_enabled() else ""
 
     system_prompt = (
-        f"{BASE_INSTRUCTIONS}\n{user_line}{TASK_RULES}{planner_rules}{treinos_rules}{cfpick_rules}\n"
+        f"{BASE_INSTRUCTIONS}\n{user_line}{TASK_RULES}{REMINDER_RULES}{planner_rules}{treinos_rules}{cfpick_rules}\n"
         f"[DIRETRIZES PESSOAIS]\n{guidelines}\n\n"
         f"[PERFIL E PRINCÍPIOS DO USUÁRIO]\n{user_profile}\n\n"
         f"[MEMÓRIAS VIVAS APRENDIDAS]\n{memories}\n\n"
         f"[ESTADO ATUAL OPERACIONAL]\n"
         f"Data/Hora: {current_time}\n"
+        f"Agora (ISO, para lembretes): {reminders.now().isoformat(timespec='minutes')}\n"
         f"Arquivo tarefas.md:\n{current_tasks}\n"
     )
     

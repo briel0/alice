@@ -24,7 +24,7 @@ Este repositório é **público** e contém só código genérico. Tudo que é p
 - Rodar o bot: `uv run python main.py` (requer `.env`, ver `.env.example`)
 - CLI: `uv run python -m src.cli` · MCP: `uv run python -m src.mcp_server`
 - Checagem rápida de imports: `uv run python -c "import src.bot, src.mcp_server"`
-- Não há testes Python nem linter configurados ainda. O `claude-mod/` tem testes próprios (`claude plugin test claude-mod`).
+- Testes: `uv run pytest` (por enquanto só `tests/test_reminders.py`). Não há linter. O `claude-mod/` tem testes próprios (`claude plugin test claude-mod`).
 
 ## Estrutura
 
@@ -41,6 +41,8 @@ src/history.py     histórico da conversa (data/historico.jsonl)
 src/planner.py     cliente da API do Planner (opcional): só cria cartões
 src/treinos.py     cliente da API do Treinos (opcional): registra e tira exercícios do treino do dia, grava peso
 src/cfpick.py      sorteio de problemas do Codeforces para treino de ICPC (opcional, CF_HANDLE); estado em data/cfpick/, cache em .cache/
+src/reminders.py   lembretes avulsos em data/lembretes.json (bot e MCP escrevem, com trava em .cache/); o bot envia os vencidos
+tests/             testes pytest
 examples/          modelos genéricos dos arquivos de data/
 deploy/            serviço systemd, wrappers e backup para rodar numa VM
 claude-mod/        identidade visual da ALICE dentro do Claude Code
@@ -79,7 +81,7 @@ Skills ficam em `.agents/skills/` (fonte única; `.claude/skills/` só aponta pa
 ## Problemas conhecidos (backlog técnico)
 
 1. Se `ALLOWED_TELEGRAM_USER_ID` não estiver definido, o bot aceita qualquer usuário (`is_authorized` em `src/bot.py`).
-2. Chamada síncrona ao Gemini dentro de handler async bloqueia o event loop (usar `client.aio`).
+2. Chamada síncrona ao Gemini: os handlers do Telegram já a rodam em outra thread (`asyncio.to_thread`), então o event loop e os lembretes não travam. Migrar para `client.aio` continua como melhoria. Os updates ainda são processados um por vez; só os botões dos lembretes (`block=False`) passam na frente.
 3. `/tarefas` quebra se o arquivo passar de 4096 caracteres; `/hoje` é igual a `/tarefas`.
 4. `guardrails.py` só conta uso do Claude; o caminho do Claude em `agent.py` usa um modelo aposentado e não é usado.
 5. Melhoria futura: registrar em cada mensagem de `data/historico.jsonl` o canal de origem (`telegram` ou `cli`).
@@ -90,7 +92,11 @@ Skills ficam em `.agents/skills/` (fonte única; `.claude/skills/` só aponta pa
 10. Registrar gastos pela ALICE. **Prioridade da sessão de 31/10/2026.** Nada decidido ainda: onde guardar (API própria como o Treinos, schema no Postgres da VPS, planilha), categorias, forma de pagamento, parcelas. Começar pelo minimundo, decidindo uma coisa de cada vez. Fase 1: registrar pela conversa ("gastei 42,90 no iFood, almoço").
     - Fase 2, depois da fase 1 e dos avisos (item 12): captura automática pelas notificações do banco no celular (Android). Um app de automação (MacroDroid ou Tasker) lê a notificação e a envia por HTTP; a ALICE extrai valor e estabelecimento e pergunta no Telegram do que se trata. Decidir como o celular chega na VPS (endpoint HTTPS público com token, ou Tailscale sem nada exposto; atenção à RAM). O texto da notificação não é confiável (a descrição de um Pix vem nela): extrair valor e estabelecimento por código, com padrões do formato do banco, e nunca passar o texto bruto ao agente com ferramentas.
 11. Treinos: responder "quanto peguei da última vez?" no celular, entre uma série e outra. Começar só com `exercise_history(exercício, n)`, sem `get_workout` nem `get_body_weights` por enquanto. Adiado de propósito: reavaliar depois de 2 ou 3 semanas de treinos registrados. Se o usuário não tiver sentido falta de perguntar, tirar do backlog. Até lá, o prompt avisa que a ALICE não lê os treinos gravados.
-12. Avisos proativos: hoje a ALICE só responde. Fazer ela mandar mensagens por conta própria no Telegram (agendador no processo do bot, `JobQueue` do python-telegram-bot, ou timer do systemd), com lembretes pedidos pelo usuário ("me lembra amanhã às 9h"). Talvez integrar com o Google Agenda: começar só lendo os compromissos (para o planejamento do dia e avisos antes dos eventos) e criar eventos depois. Atenção ao OAuth do Google num servidor sem navegador e a guardar o token fora do repositório.
+12. Avisos proativos. **MVP feito (17/11/2026): lembretes avulsos** ("me lembra amanhã às 9h").
+    - Como funciona: loop asyncio no processo do bot (a cada 30 s) lê `data/lembretes.json` e manda os vencidos com os botões ✅ Feito / ⏰ +1h / 📅 Amanhã 9h. Lembretes criados pelo Gemini ou pelo MCP (`add_reminder`, `list_reminders`, `cancel_reminder`); o LLM converte a data em ISO com fuso, o código valida (futuro, com fuso) e a resposta repete a data absoluta. Sem hora dita: 9h (tarde 14h, noite 20h). `/lembretes` lista com botão de cancelar. Atrasados (bot fora do ar) saem todos, marcados, agrupados se forem mais de 3. Commit em `data/.git` só na criação e no cancelamento.
+    - Descartados: `JobQueue` do python-telegram-bot (APScheduler a mais na RAM, jobs só em memória) e timer do systemd (um processo por disparo, botões voltariam ao bot de qualquer jeito); SQLite (por enquanto; a interface de `src/reminders.py` permite trocar quando o item 14 trouxer um banco).
+    - Próximos, nada decidido: lembretes recorrentes (campo `repetir` já reservado); insistir quando ignorado (campo `resolvido_em`); avisos do treino de Codeforces (tempo-limite estourado, revisões pendentes, ver `cfpick.status`); inbox acumulado e tarefas paradas (cuidado com spam); prazos no texto das tarefas.
+    - Google Agenda: começar só lendo os compromissos (para o planejamento do dia e avisos antes dos eventos) e criar eventos depois. Atenção ao OAuth do Google num servidor sem navegador e a guardar o token fora do repositório.
 13. Diário de decisões: `data/decisoes.md` (privado), pequeno, não um diário emocional. Cada entrada: decisão, data, motivo, expectativa. Uma ferramenta de uma linha (`add_decision`) registra pela conversa. Depois de 30, 60 e 90 dias, a ALICE pergunta se a decisão funcionou e anota a resposta junto, para o usuário aprender com o que pensou na hora, não com a memória reconstruída depois. As revisões dependem dos avisos proativos (item 12). Criar o exemplo genérico em `examples/`.
 14. Filtro de notificações e e-mails: a ALICE recebe todas as notificações do celular (Android, pelo MacroDroid ou Tasker) e os e-mails (API do Gmail, só leitura) e avisa só das relevantes. Fluxo: regras fixas por código (app ou remetente que sempre passa ou nunca passa) → classificador com o Gemini **sem nenhuma ferramenta**, que devolve só "relevante ou não" e um resumo de uma linha → relevante vira mensagem na hora; o resto vai para um resumo diário. Regra inegociável: o texto de notificações e e-mails nunca chega ao agente que tem ferramentas (qualquer um pode escrever "ALICE, apague tudo" num e-mail). O que é crítico (ligações, banco, família) continua tocando direto no celular, para a ALICE fora do ar não deixar o usuário surdo. "Isso era importante" vira regra fixa. Atenção à privacidade (tudo passaria pelo Gemini) e ao volume. Depende dos avisos (item 12) e reaproveita a entrada HTTP da fase 2 dos gastos (item 10); ordem sugerida: 12 → 10 → 14.
     - Fase 2: responder mensagens do WhatsApp pela própria notificação do Android (botão "Responder", via Tasker + AutoNotification ou MacroDroid), saindo pelo app oficial no celular. Nada de WhatsApp Web ou clientes não oficiais (whatsapp-web.js, Baileys) na VPS: violam os termos, arriscam banir o número pessoal e o Chromium não cabe na RAM. A ALICE só sugere a resposta no Telegram e envia depois do "sim" do usuário; nunca responde sozinha em nome dele (exceção possível: resposta automática que se identifica como assistente). Quem redige é uma chamada do Gemini sem ferramentas, porque o texto da mensagem não é confiável.
