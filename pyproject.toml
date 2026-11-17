@@ -15,8 +15,19 @@ dependencies = [
     "python-dotenv>=1.2.4",
     "python-telegram-bot>=22.8",
     "rich>=15.0.0",
+    "tzdata>=2026.6",
 ]
 
 [tool.uv]
 # Não é um pacote instalável: roda com "python -m src..." a partir da raiz
 package = false
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
+
+[tool.pytest.ini_options]
+# O projeto roda com "python -m src..." a partir da raiz
+pythonpath = ["."]
+testpaths = ["tests"]

@@ -18,14 +18,16 @@ def save_tasks_markdown(content: str, commit_message: str = "chore: update tasks
     """Salva o novo conteúdo no arquivo de tarefas e opcionalmente cria commit local."""
     TASKS_FILE.parent.mkdir(parents=True, exist_ok=True)
     TASKS_FILE.write_text(content.strip() + "\n", encoding="utf-8")
-    
-    # Auto-commit silencioso no repositório próprio de data/ (privado, separado do código).
-    # Sem data/.git não faz nada: nunca commita no repositório do código.
+    commit_data_file(TASKS_FILE, commit_message)
+
+def commit_data_file(path: Path, commit_message: str) -> None:
+    """Auto-commit silencioso de um arquivo no repositório próprio de data/ (privado, separado do código).
+    Sem data/.git não faz nada: nunca commita no repositório do código."""
     if not (DATA_DIR / ".git").exists():
         return
     try:
         subprocess.run(
-            ["git", "add", TASKS_FILE.name],
+            ["git", "add", str(path.relative_to(DATA_DIR))],
             cwd=DATA_DIR,
             check=False,
             stdout=subprocess.DEVNULL,
