@@ -14,6 +14,9 @@ EnvironmentFile=/etc/alice/alice.env
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=TZ=America/Sao_Paulo
+# /var/lib/alice (dono alice): SQLite do filtro de e-mails (NOTIF_DB_PATH)
+StateDirectory=alice
+StateDirectoryMode=0700
 ExecStartPre=/opt/alice/app/.venv/bin/python -c "from src.config import ALLOWED_TELEGRAM_USER_ID, TELEGRAM_BOT_TOKEN, GEMINI_API_KEY, ANTHROPIC_API_KEY; assert ALLOWED_TELEGRAM_USER_ID and ALLOWED_TELEGRAM_USER_ID > 0, 'Configure ALLOWED_TELEGRAM_USER_ID'; assert TELEGRAM_BOT_TOKEN, 'Configure TELEGRAM_BOT_TOKEN'; assert GEMINI_API_KEY or ANTHROPIC_API_KEY, 'Configure uma chave de API'"
 ExecStart=/opt/alice/app/.venv/bin/python /opt/alice/app/main.py
 Restart=always

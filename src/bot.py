@@ -14,12 +14,13 @@ from telegram.ext import (
     filters,
 )
 from src import reminders
-from src.config import TELEGRAM_BOT_TOKEN, ALLOWED_TELEGRAM_USER_ID
+from src.config import TELEGRAM_BOT_TOKEN, ALLOWED_TELEGRAM_USER_ID, NOTIF_ATIVO
 from src.storage import read_tasks_markdown
 from src.history import clear_history
 from src.guardrails import get_usage_summary
 from src.agent import process_user_message
 from src.telegram_format import reply_formatted
+from src.notificacoes import telegram as notif_telegram
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -203,11 +204,15 @@ async def start_reminder_loop(app: Application) -> None:
         logger.warning("ALLOWED_TELEGRAM_USER_ID não definido: os lembretes não serão enviados.")
         return
     app.bot_data["reminder_task"] = asyncio.create_task(reminder_loop(app.bot))
+    if NOTIF_ATIVO:
+        # Filtro de e-mails (item 14): loop próprio, que nunca passa texto de e-mail ao agente
+        app.bot_data["notif_task"] = asyncio.create_task(notif_telegram.loop(app.bot))
 
 async def stop_reminder_loop(app: Application) -> None:
-    task = app.bot_data.pop("reminder_task", None)
-    if task:
-        task.cancel()
+    for key in ("reminder_task", "notif_task"):
+        task = app.bot_data.pop(key, None)
+        if task:
+            task.cancel()
 
 async def lembretes_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await check_auth_or_warn(update):
@@ -288,6 +293,9 @@ def run_bot() -> None:
     app.add_handler(CommandHandler(["lembretes", "reminders"], lembretes_command))
     # block=False: o botão responde na hora mesmo com uma mensagem sendo processada pelo Gemini
     app.add_handler(CallbackQueryHandler(reminder_button, pattern=r"^lem:", block=False))
+    if NOTIF_ATIVO:
+        app.add_handler(CommandHandler("filtro", notif_telegram.filtro_command))
+        app.add_handler(CallbackQueryHandler(notif_telegram.botao, pattern=r"^ntf:", block=False))
 
     app.add_handler(CommandHandler(["start", "ajuda", "help"], start_command))
     app.add_handler(CommandHandler(["tarefas", "tasks", "hoje"], tarefas_command))

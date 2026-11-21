@@ -36,6 +36,38 @@ Roda com systemd numa VM pequena (Ubuntu 24.04, 512 MB + swap bastam). Não prec
    ```
 6. Teste pelo Telegram: `/start`, um pedido simples e `/tarefas`. Confira `git -C /opt/alice/app/data log` para ver o commit da mudança.
 
+## Filtro de e-mails (opcional, item 14 do AGENTS.md)
+
+A ALICE lê o Gmail **só com permissão de leitura** (`gmail.readonly`), a cada 5 min, e avisa no Telegram o que importa; o resto vai para os resumos das 12h e 19h. O texto dos e-mails nunca chega ao agente com ferramentas.
+
+1. **Projeto separado no Google Cloud** (console.cloud.google.com → novo projeto, ex.: `alice-notificacoes`). Ative a **Gmail API**.
+2. **Tela de consentimento OAuth**: tipo "Externo", adicione o escopo `.../auth/gmail.readonly` e **publique o app** ("Publicar app" → "Em produção"). Não precisa enviar para verificação: para uso só seu basta passar pela tela "O Google não verificou este app" no login. Em modo "Teste" o token expira a cada 7 dias.
+3. **Credenciais** → "Criar credenciais" → "ID do cliente OAuth" → tipo **App para computador**. Baixe o JSON.
+4. **Chave do Gemini do mesmo projeto** (aistudio.google.com → "Get API key" → escolha o projeto `alice-notificacoes`). Assim o classificador nunca gasta a cota da conversa.
+5. **No PC**, autorize uma vez (abre o navegador; aceite só a leitura):
+   ```sh
+   uv run python scripts/gmail_autorizar.py caminho/do/client_secret.json
+   scp .cache/gmail-token.json alice-vm:/tmp/gmail-token.json
+   ```
+   Depois apague `.cache/gmail-token.json` e o JSON do cliente do PC.
+6. **Na VM**:
+   ```sh
+   sudo install -o root -g root -m 600 /tmp/gmail-token.json /etc/alice/gmail-token.json && rm /tmp/gmail-token.json
+   sudo -u alice cp -n /opt/alice/app/examples/notificacoes-regras.example.md /opt/alice/app/data/notificacoes-regras.md
+   sudo install -D -m 644 /opt/alice/app/deploy/alice.service.d/gmail.conf /etc/systemd/system/alice.service.d/gmail.conf
+   sudo cp /opt/alice/app/deploy/alice.service /etc/systemd/system/   # cria /var/lib/alice (StateDirectory)
+   ```
+   O token continua só do root; o systemd entrega uma cópia ao serviço (`LoadCredential`). No `/etc/alice/alice.env`:
+   ```
+   NOTIF_GMAIL_TOKEN_PATH=/run/credentials/alice.service/gmail-token.json
+   NOTIF_GEMINI_API_KEY=<chave do passo 4>
+   NOTIF_DB_PATH=/var/lib/alice/notificacoes.db
+   ```
+   Depois `sudo systemctl daemon-reload && sudo systemctl restart alice`.
+7. A primeira rodada começa **de agora** (não varre a caixa antiga). A primeira semana é o **modo sombra**: tudo sai com 🧪 e o app do Gmail no celular continua notificando. Depois de 7 dias chega um balanço (ou peça com `/filtro`); se estiver bom, desligue as notificações do Gmail no celular e ponha `NOTIF_SOMBRA=0` no `alice.env`.
+
+Se o Google revogar a autorização (senha trocada, acesso removido em myaccount.google.com/permissions), a ALICE avisa uma vez e para de ler; refaça os passos 5 e 6 e reinicie a ALICE (o token novo destrava sozinho). O SQLite guarda remetente, assunto e snippet por 30 dias, sem backup.
+
 ## Wrappers (`deploy/bin`)
 
 - `alice-mcp`: MCP em stdio como `alice` (`sudo -u alice`); não carrega `/etc/alice/alice.env`. Para o MCP também criar cartões no Planner, ponha só `PLANNER_API_URL` (e `PLANNER_INBOX_CATEGORY`, se usar) em `/opt/alice/app/.env` (dono `alice`, `600`). A URL não é segredo. O mesmo vale para o treino de Codeforces: só o `CF_HANDLE` (as chaves da API ficam no `alice.env`).
