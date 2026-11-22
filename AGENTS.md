@@ -86,7 +86,7 @@ Skills ficam em `.agents/skills/` (fonte única; `.claude/skills/` só aponta pa
 1. Se `ALLOWED_TELEGRAM_USER_ID` não estiver definido, o bot aceita qualquer usuário (`is_authorized` em `src/bot.py`).
 2. Chamada síncrona ao Gemini: os handlers do Telegram já a rodam em outra thread (`asyncio.to_thread`), então o event loop e os lembretes não travam. Migrar para `client.aio` continua como melhoria. Os updates ainda são processados um por vez; só os botões dos lembretes (`block=False`) passam na frente.
 3. `/tarefas` quebra se o arquivo passar de 4096 caracteres; `/hoje` é igual a `/tarefas`.
-4. `guardrails.py` só conta uso do Claude; o caminho do Claude em `agent.py` usa um modelo aposentado e não é usado.
+4. `guardrails.py` não conta nada: só o caminho do Claude registrava tokens, e ele saiu em 22/11/2026 (issue #1). O disjuntor ainda lê `data/usage_tracker.json`, mas os contadores ficam em zero, então não limita o Gemini. Decidir se ele passa a contar as chamadas ao Gemini ou se sai.
 5. Melhoria futura: registrar em cada mensagem de `data/historico.jsonl` o canal de origem (`telegram` ou `cli`).
 6. Interface de voz — primeiro objetivo: conversar com a ALICE pelo microfone e alto-falante do PC, com respostas faladas e acesso às tarefas e memórias. Não implementar nesta etapa.
 7. Ideia futura, após validar a voz no PC: Echo Dot ou hardware próprio como interface de voz (Alexa Skill, privacidade, custos, backend 24/7). Não implementar nesta etapa.

@@ -26,7 +26,7 @@ Roda com systemd numa VM pequena (Ubuntu 24.04, 512 MB + swap bastam). Não prec
 1. Crie o usuário de sistema `alice` com home `/opt/alice`, instale git e uv para ele.
 2. Como `alice`: `git clone https://github.com/<você>/alice.git /opt/alice/app` e `uv sync --locked --no-dev --python 3.14` dentro dele.
 3. Dados: clone seu repositório privado de dados em `/opt/alice/app/data` (ou crie um novo a partir de `examples/`). Deixe `data/` com permissão `700`. Um `data/.gitignore` com `audio_temp/` evita versionar áudios temporários.
-4. Crie `/etc/alice/alice.env` (root, `600`) com as variáveis de `.env.example`. Para usar só o Gemini, deixe `ANTHROPIC_API_KEY` ausente.
+4. Crie `/etc/alice/alice.env` (root, `600`) com as variáveis de `.env.example`.
 5. Copie os arquivos de systemd e os wrappers:
    ```sh
    sudo install -m 755 deploy/bin/* /opt/alice/bin/

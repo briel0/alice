@@ -6,13 +6,10 @@ from datetime import datetime
 from pathlib import Path
 from google import genai
 from google.genai import types
-import anthropic
 
 from src.config import (
     GEMINI_API_KEY,
     GEMINI_MODEL,
-    ANTHROPIC_API_KEY,
-    CLAUDE_MODEL,
     BASE_DIR,
     DATA_DIR,
     USER_NAME
@@ -21,7 +18,7 @@ from src import cfpick, planner, reminders, storage, treinos
 from src.treinos import Serie
 from src.storage import read_tasks_markdown
 from src.history import append_message, get_recent_history
-from src.guardrails import check_guardrails, record_token_usage
+from src.guardrails import check_guardrails
 
 MAX_TOOL_ROUNDS = 5
 
@@ -213,63 +210,6 @@ def available_tools() -> list:
         tools += [cf_pick, cf_record, cf_skip, cf_status]
     return tools
 
-ITEM_PROPERTY = {"type": "string", "description": "Texto (ou trecho único) do item como aparece no arquivo"}
-SECTION_PROPERTY = {"type": "string", "description": "Parte do título da seção, ex.: INBOX, Estudos, AGUARDANDO"}
-
-CLAUDE_TOOLS = [
-    {
-        "name": "add_task",
-        "description": add_task.__doc__,
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "text": {"type": "string", "description": "Texto do novo item"},
-                "section": SECTION_PROPERTY
-            },
-            "required": ["text"]
-        }
-    },
-    {
-        "name": "complete_task",
-        "description": complete_task.__doc__,
-        "input_schema": {"type": "object", "properties": {"item": ITEM_PROPERTY}, "required": ["item"]}
-    },
-    {
-        "name": "move_task",
-        "description": move_task.__doc__,
-        "input_schema": {
-            "type": "object",
-            "properties": {"item": ITEM_PROPERTY, "section": SECTION_PROPERTY},
-            "required": ["item", "section"]
-        }
-    },
-    {
-        "name": "remove_task",
-        "description": remove_task.__doc__,
-        "input_schema": {"type": "object", "properties": {"item": ITEM_PROPERTY}, "required": ["item"]}
-    },
-    {
-        "name": "add_memory",
-        "description": "Salva uma memória viva, fato pessoal, preferência ou mudança de rotina sobre o usuário.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "fact": {"type": "string", "description": "O fato aprendido"},
-                "category": {"type": "string", "description": "Categoria (ex: saúde, rotina, pessoas)", "default": "geral"}
-            },
-            "required": ["fact"]
-        }
-    },
-    {
-        "name": "get_current_tasks",
-        "description": "Lê e retorna o conteúdo atual do tarefas.md.",
-        "input_schema": {
-            "type": "object",
-            "properties": {}
-        }
-    }
-]
-
 def execute_tool(name: str, args: dict) -> str:
     if name == "add_task":
         return add_task(args.get("text", ""), args.get("section", "INBOX"))
@@ -307,61 +247,6 @@ def execute_tool(name: str, args: dict) -> str:
         elif name == "cf_status":
             return cf_status()
     return f"Ferramenta desconhecida: {name}"
-
-def _process_with_claude(user_text: str, system_prompt: str, history: list[dict]) -> str:
-    """Processa a mensagem usando a API da Anthropic (Claude 3.5 Haiku/Sonnet)."""
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-    
-    messages = []
-    for item in history:
-        role = "user" if item["role"] == "user" else "assistant"
-        messages.append({"role": role, "content": item["content"]})
-        
-    messages.append({"role": "user", "content": user_text})
-    
-    response = client.messages.create(
-        model=CLAUDE_MODEL,
-        max_tokens=2048,
-        system=system_prompt,
-        messages=messages,
-        tools=CLAUDE_TOOLS,
-        temperature=0.3
-    )
-    
-    # Registra o uso de tokens na trava de segurança
-    record_token_usage(response.usage.input_tokens, response.usage.output_tokens)
-    
-    # Se chamou ferramentas
-    if response.stop_reason == "tool_use":
-        tool_results = []
-        for block in response.content:
-            if block.type == "tool_use":
-                res = execute_tool(block.name, block.input)
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": res
-                })
-                
-        # Continua a conversa enviando os resultados das tools
-        messages.append({"role": "assistant", "content": response.content})
-        messages.append({"role": "user", "content": tool_results})
-        
-        final_response = client.messages.create(
-            model=CLAUDE_MODEL,
-            max_tokens=2048,
-            system=system_prompt,
-            messages=messages,
-            tools=CLAUDE_TOOLS,
-            temperature=0.3
-        )
-        record_token_usage(final_response.usage.input_tokens, final_response.usage.output_tokens)
-        
-        text_blocks = [b.text for b in final_response.content if hasattr(b, "text")]
-        return "".join(text_blocks) or "Feito. Tarefas e estado atualizados."
-        
-    text_blocks = [b.text for b in response.content if hasattr(b, "text")]
-    return "".join(text_blocks) or "Entendido."
 
 def _process_with_gemini(user_text: str | None, audio_bytes: bytes | None, mime_type: str, system_prompt: str, history: list[dict]) -> str:
     """Processa mensagem ou áudio usando a API do Gemini."""
@@ -416,7 +301,7 @@ def process_user_message(
     mime_type: str = "audio/ogg",
     user_id: int | None = None
 ) -> str:
-    """Ponto de entrada único com Circuit Breaker de custos e fallback inteligente."""
+    """Ponto de entrada único (Telegram e CLI), com o disjuntor de custos antes da chamada."""
     
     # 1. VERIFICA O DISJUNTOR DE SEGURANÇA (Circuit Breaker)
     allowed, block_reason = check_guardrails()
@@ -447,33 +332,22 @@ def process_user_message(
     history = get_recent_history(limit=16)
     recorded_user_message = user_text or "[Áudio de voz]"
     
-    # 2. SELETOR DE MODELO: Claude se configurado, Gemini como fallback
-    final_text = ""
+    # 2. CHAMA O GEMINI
+    if not GEMINI_API_KEY:
+        return "❌ Nenhuma chave de API configurada (configure GEMINI_API_KEY no .env)."
     try:
-        if ANTHROPIC_API_KEY and not audio_bytes:
-            # Se for texto e a chave do Claude estiver no .env, usa Claude
-            final_text = _process_with_claude(user_text=user_text or "", system_prompt=system_prompt, history=history)
-        elif GEMINI_API_KEY:
-            # Se for áudio ou se o Claude não estiver configurado, usa Gemini
-            final_text = _process_with_gemini(
-                user_text=user_text,
-                audio_bytes=audio_bytes,
-                mime_type=mime_type,
-                system_prompt=system_prompt,
-                history=history
-            )
-        else:
-            return "❌ Nenhuma chave de API configurada (configure ANTHROPIC_API_KEY ou GEMINI_API_KEY no .env)."
+        final_text = _process_with_gemini(
+            user_text=user_text,
+            audio_bytes=audio_bytes,
+            mime_type=mime_type,
+            system_prompt=system_prompt,
+            history=history
+        )
     except Exception as e:
-        # Se um falhar por cota ou rede, tenta o outro automaticamente
         err_msg = str(e)
         if "RESOURCE_EXHAUSTED" in err_msg or "429" in err_msg:
-            if ANTHROPIC_API_KEY and not audio_bytes:
-                final_text = _process_with_claude(user_text=user_text or "", system_prompt=system_prompt, history=history)
-            else:
-                return f"⚠️ Limite de requisições temporariamente excedido: {err_msg}"
-        else:
-            raise e
+            return f"⚠️ Limite de requisições temporariamente excedido: {err_msg}"
+        raise
 
     # Grava na memória persistente
     append_message("user", recorded_user_message, user_id=user_id)

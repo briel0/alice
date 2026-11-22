@@ -10,9 +10,6 @@ from src.config import DATA_DIR, BASE_DIR
 
 USAGE_FILE = DATA_DIR / "usage_tracker.json"
 
-# Preços aproximados por milhão de tokens (Claude 3.5 Haiku)
-PRICE_PER_M_INPUT = 0.80   # $0.80 por 1M tokens de entrada
-PRICE_PER_M_OUTPUT = 4.00  # $4.00 por 1M tokens de saída
 
 # Tetos diários de segurança padrão
 DEFAULT_MAX_REQUESTS_PER_DAY = 60
@@ -62,20 +59,6 @@ def check_guardrails() -> tuple[bool, str]:
         
     return True, ""
 
-def record_token_usage(input_tokens: int, output_tokens: int) -> dict:
-    """Registra tokens gastos e calcula o custo estimado."""
-    usage = load_usage()
-    
-    usage["requests"] += 1
-    usage["input_tokens"] += input_tokens
-    usage["output_tokens"] += output_tokens
-    
-    cost_input = (input_tokens / 1_000_000) * PRICE_PER_M_INPUT
-    cost_output = (output_tokens / 1_000_000) * PRICE_PER_M_OUTPUT
-    usage["estimated_cost_usd"] = round(usage["estimated_cost_usd"] + cost_input + cost_output, 4)
-    
-    save_usage(usage)
-    return usage
 
 def get_usage_summary() -> str:
     """Retorna um resumo amigável do consumo atual do dia."""
