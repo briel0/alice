@@ -2,6 +2,8 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import json
+import logging
+import re
 from datetime import datetime
 from pathlib import Path
 from google import genai
@@ -19,6 +21,8 @@ from src.treinos import Serie
 from src.storage import read_tasks_markdown
 from src.history import append_message, get_recent_history
 from src.guardrails import check_guardrails
+
+logger = logging.getLogger(__name__)
 
 MAX_TOOL_ROUNDS = 5
 
@@ -108,6 +112,7 @@ PLANNER (PROJETOS):
 TREINOS_RULES = """
 TREINOS:
 - Registre só os exercícios da mensagem atual: os das mensagens anteriores do histórico já foram registrados (ou recusados) e registrar de novo duplica.
+- Cada mensagem com uma série é uma série nova, mesmo que seja igual à anterior ("leg press 160kg 8 reps" de novo): chame `log_exercise` nesta resposta. Nunca confirme uma série sem ter chamado a ferramenta agora, e tire o total de séries do que ela devolveu, não da conversa.
 - Registre cada exercício feito com `log_exercise(exercise, sets, day)`, uma chamada por exercício, todas na mesma resposta quando vierem juntos. Os exercícios entram no treino do dia (criado na primeira chamada).
 - `exercise` é o nome ou apelido como o usuário falou ("supino", "paralela"); a API acha no catálogo.
 - `sets` tem um item por série: "4x10 com 60" são 4 séries de reps=10, load_kg=60; "10, 8, 6 com 20" são 3 séries. Preencha só o que o exercício usa: musculação reps e load_kg; peso corporal reps (load_kg só com carga extra, assistance_kg com máquina ou elástico); por tempo duration_sec; cardio distance_m e duration_sec. Unilateral: side "left" ou "right".
@@ -248,8 +253,38 @@ def execute_tool(name: str, args: dict) -> str:
             return cf_status()
     return f"Ferramenta desconhecida: {name}"
 
+# Ferramentas que gravam algum estado. Uma resposta que diz "registrei" sem nenhuma delas ter rodado na mesma
+# mensagem é falsa (backlog, item 22: o modelo imitava "Registrei mais 1 série" sem chamar log_exercise).
+WRITE_TOOLS = {"add_task", "complete_task", "move_task", "remove_task", "add_memory", "add_reminder",
+               "cancel_reminder", "create_card", "log_exercise", "remove_exercise", "log_body_weight",
+               "cf_pick", "cf_record", "cf_skip"}
+
+CLAIMS_WRITE = re.compile(
+    r"(?<!não )(?<!nao )\b(registrei|anotei|adicionei|gravei|salvei|agendei|criei|marquei|movi|apaguei|removi"
+    r"|tirei|cancelei|coloquei|somei|incluí|inclui)\b",
+    re.IGNORECASE,
+)
+
+NO_WRITE_NUDGE = (
+    "[Aviso do sistema, não do usuário] Sua resposta diz que algo foi gravado, mas nenhuma ferramenta que grava "
+    "foi chamada nesta mensagem, então nada foi gravado. Se o usuário pediu para registrar algo nesta mensagem "
+    "(inclusive uma série igual à anterior), chame a ferramenta agora. Se não, responda de novo sem dizer que gravou."
+)
+
+NO_WRITE_WARNING = ("⚠️ Eu ia confirmar uma gravação, mas nada foi gravado nesta mensagem. "
+                    "Manda de novo o que era para registrar.")
+
+
+def claims_write(text: str) -> bool:
+    return bool(CLAIMS_WRITE.search(text or ""))
+
+
 def _process_with_gemini(user_text: str | None, audio_bytes: bytes | None, mime_type: str, system_prompt: str, history: list[dict]) -> str:
-    """Processa mensagem ou áudio usando a API do Gemini."""
+    """Processa mensagem ou áudio usando a API do Gemini.
+
+    Uma resposta que afirma ter gravado algo sem nenhuma ferramenta de gravação ter rodado nesta mensagem é
+    devolvida ao modelo uma vez, para ele chamar a ferramenta ou corrigir a resposta. Se insistir, o usuário
+    recebe um aviso de que nada foi gravado, nunca a confirmação falsa."""
     client = genai.Client(api_key=GEMINI_API_KEY)
     
     contents: list[types.Content] = []
@@ -276,6 +311,8 @@ def _process_with_gemini(user_text: str | None, audio_bytes: bytes | None, mime_
         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
     )
 
+    wrote = nudged = False
+    results: list[str] = []
     # Algumas rodadas de ferramentas permitem encadear (ex.: concluir um item e criar outro)
     for _ in range(MAX_TOOL_ROUNDS):
         response = client.models.generate_content(
@@ -284,16 +321,33 @@ def _process_with_gemini(user_text: str | None, audio_bytes: bytes | None, mime_
             config=config,
         )
         if not response.function_calls:
-            return response.text or "Entendido."
+            text = response.text or "Entendido."
+            if wrote or not claims_write(text):
+                return text
+            if nudged:
+                logger.warning("Resposta afirmou gravação sem ferramenta, mesmo depois do aviso: %r", text[:200])
+                return NO_WRITE_WARNING
+            logger.warning("Resposta afirmou gravação sem ferramenta; devolvendo ao modelo: %r", text[:200])
+            nudged = True
+            contents.append(response.candidates[0].content)
+            contents.append(types.Content(role="user", parts=[types.Part.from_text(text=NO_WRITE_NUDGE)]))
+            continue
 
         tool_results = []
         for call in response.function_calls:
             res = execute_tool(call.name, call.args or {})
+            if call.name in WRITE_TOOLS:
+                wrote = True
+                results.append(res)
             tool_results.append(types.Part.from_function_response(name=call.name, response={"result": res}))
         contents.append(response.candidates[0].content)
         contents.append(types.Content(role="user", parts=tool_results))
 
-    return response.text or "Feito. Tarefas e estado atualizados."
+    # Acabaram as rodadas sem resposta final: mostra o que as ferramentas de gravação devolveram, em vez de um
+    # "feito" genérico; sem nenhuma gravação, avisa que nada foi gravado
+    if results:
+        return "Fiz o seguinte (sem resposta do modelo depois):\n" + "\n".join(f"• {r}" for r in results)
+    return "⚠️ Não consegui terminar a resposta, e nada foi gravado. Tenta de novo."
 
 def process_user_message(
     user_text: str | None = None,
