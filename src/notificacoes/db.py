@@ -4,6 +4,10 @@ Tabelas:
 - itens: um por e-mail (ou, no futuro, notificação), com o nível decidido e o que já foi enviado
 - estado: chave/valor (historyId do Gmail, último resumo enviado, início do modo sombra, avisos já dados)
 - uso: chamadas ao Gemini por dia, para nunca passar do limite
+- propostas: ajuste sugerido depois de uma correção (critério e trecho do assunto), esperando o "sim" do usuário;
+  fica aqui porque o texto não cabe nos 64 bytes de um botão do Telegram
+
+A coluna feedback guarda o nível em que o usuário disse que o item devia ter caído (agora/resumo/silencio).
 
 Itens com mais de KEEP_DAYS dias são apagados. Cada função abre e fecha a própria conexão: o bot chama
 daqui por asyncio.to_thread, e uma conexão do sqlite3 não deve ser usada em threads diferentes.
@@ -43,6 +47,14 @@ CREATE TABLE IF NOT EXISTS itens (
 CREATE INDEX IF NOT EXISTS itens_processado ON itens (processado_em);
 CREATE TABLE IF NOT EXISTS estado (chave TEXT PRIMARY KEY, valor TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS uso (dia TEXT PRIMARY KEY, chamadas INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS propostas (
+    id INTEGER PRIMARY KEY,
+    item_id INTEGER NOT NULL,
+    nivel TEXT NOT NULL,
+    criterio TEXT NOT NULL,
+    trecho TEXT NOT NULL,
+    criado_em TEXT NOT NULL
+);
 """
 
 
@@ -121,6 +133,7 @@ def inserir(itens: list[dict], at: datetime | None = None) -> list[int]:
                 ids.append(cur.lastrowid)
         limite = (at - timedelta(days=KEEP_DAYS)).isoformat(timespec="seconds")
         con.execute("DELETE FROM itens WHERE processado_em < ?", (limite,))
+        con.execute("DELETE FROM propostas WHERE criado_em < ?", (limite,))
     return ids
 
 
@@ -158,19 +171,43 @@ def silenciados(desde: str, ate: str) -> list[dict]:
         return [dict(r) for r in rows]
 
 
-def set_feedback(item_id: int, valor: str) -> None:
+def set_feedback(item_id: int, nivel: str) -> None:
+    """Nível em que o item devia ter caído, segundo o usuário."""
+    assert nivel in NIVEIS
     with conectar() as con:
-        con.execute("UPDATE itens SET feedback = ? WHERE id = ?", (valor, item_id))
+        con.execute("UPDATE itens SET feedback = ? WHERE id = ?", (nivel, item_id))
 
 
 def balanco(desde: str) -> dict:
-    """Contagens para o balanço do modo sombra: quantos por nível e quantos 👍/👎 em cada um."""
+    """Contagens para o balanço: quantos por nível e, dos corrigidos, para onde o usuário disse que iam."""
     with conectar() as con:
         rows = con.execute("SELECT nivel, feedback, COUNT(*) AS n FROM itens WHERE processado_em >= ?"
                            " GROUP BY nivel, feedback", (desde,))
-        out = {n: {"total": 0, "up": 0, "down": 0} for n in NIVEIS}
+        out = {n: {"total": 0, "corrigidos": 0, "para": {}} for n in NIVEIS}
         for r in rows:
             out[r["nivel"]]["total"] += r["n"]
-            if r["feedback"] in ("up", "down"):
-                out[r["nivel"]][r["feedback"]] += r["n"]
+            if r["feedback"] in NIVEIS and r["feedback"] != r["nivel"]:
+                out[r["nivel"]]["corrigidos"] += r["n"]
+                out[r["nivel"]]["para"][r["feedback"]] = r["n"]
         return out
+
+
+# --- Propostas ---
+
+def nova_proposta(item_id: int, nivel: str, criterio: str, trecho: str, at: datetime | None = None) -> int:
+    with conectar() as con:
+        cur = con.execute("INSERT INTO propostas (item_id, nivel, criterio, trecho, criado_em) VALUES (?,?,?,?,?)",
+                          (item_id, nivel, criterio, trecho, (at or now()).isoformat(timespec="seconds")))
+        return cur.lastrowid
+
+
+def proposta(proposta_id: int) -> dict | None:
+    with conectar() as con:
+        row = con.execute("SELECT * FROM propostas WHERE id = ?", (proposta_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def apagar_proposta(proposta_id: int) -> bool:
+    """Apaga e diz se ela existia (um segundo toque no mesmo botão não grava duas vezes)."""
+    with conectar() as con:
+        return con.execute("DELETE FROM propostas WHERE id = ?", (proposta_id,)).rowcount > 0

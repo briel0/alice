@@ -72,26 +72,52 @@ def test_classificador_sem_ferramentas(monkeypatch):
 
 # --- Regras ---
 
-def test_regras_endereco_vence_dominio_e_nivel_mais_alto_desempata():
+def test_regras_assunto_vence_remetente_e_nivel_mais_alto_desempata():
     regras.NOTIF_RULES_FILE.write_text(
-        "## Avisar na hora\n- chefe@empresa.com\n- @banco.com\n\n## Silêncio\n- @empresa.com\n- @banco.com\n"
+        "## Avisar na hora\n- chefe@empresa.com\n- banco@x.com | compra NÃO reconhecida\n\n"
+        "## Resumo diário\n- banco@x.com\n\n"
+        "## Silêncio\n- banco@x.com | Pix   foi enviado\n- banco@x.com | pix foi\n- @dominio.com\n"
         "\n## Critérios\n- isto@nao.com é texto\n", encoding="utf-8")
     fixas, criterios = regras.ler()
-    assert regras.nivel_por_regra("Chefe@Empresa.com", fixas) == ("agora", "chefe@empresa.com")
-    assert regras.nivel_por_regra("rh@empresa.com", fixas) == ("silencio", "@empresa.com")
-    assert regras.nivel_por_regra("x@avisos.banco.com", fixas) == ("agora", "@banco.com")
-    assert regras.nivel_por_regra("x@outrobanco.com", fixas) is None
-    assert "isto@nao.com" not in fixas and "texto" in criterios
+    assert regras.nivel_por_regra("Chefe@Empresa.com", "Oi", fixas) == ("agora", "chefe@empresa.com")
+    assert regras.nivel_por_regra("banco@x.com", "Seu PIX foi enviado: R$ 10", fixas) == \
+        ("silencio", "banco@x.com | pix foi enviado")  # o trecho mais longo desempata no mesmo nível
+    assert regras.nivel_por_regra("banco@x.com", "Pix foi enviado? Compra não reconhecida", fixas)[0] == "agora"
+    assert regras.nivel_por_regra("banco@x.com", "Sua fatura fechou", fixas) == ("resumo", "banco@x.com")
+    assert regras.nivel_por_regra("rh@dominio.com", "Oi", fixas) is None  # regra por domínio não existe mais
+    assert ("isto@nao.com", "") not in fixas and "texto" in criterios
 
 
 def test_adicionar_regra_move_de_secao(isolado):
-    regras.NOTIF_RULES_FILE.write_text("## Avisar na hora\n\n## Silêncio\n- loja@x.com\n\n## Critérios\nc\n",
-                                       encoding="utf-8")
-    assert "gravada" in regras.adicionar("loja@x.com", "agora")
+    regras.NOTIF_RULES_FILE.write_text(
+        "## Avisar na hora\n\n## Silêncio\n- loja@x.com\n- loja@x.com | Pedido enviado\n\n"
+        "## Critérios\n- loja@x.com | pedido enviado (texto, não regra)\n", encoding="utf-8")
+    assert "gravada" in regras.adicionar("loja@x.com", "", "agora")
+    assert "gravada" in regras.adicionar("Loja@X.com", "  pedido   ENVIADO ", "resumo")
     fixas, criterios = regras.ler()
-    assert fixas == {"loja@x.com": "agora"} and criterios == "c"
-    assert isolado and "loja@x.com" in isolado[0]
-    assert regras.adicionar("não é endereço", "agora") == "Regra inválida."
+    assert fixas == {("loja@x.com", ""): "agora", ("loja@x.com", "pedido enviado"): "resumo"}
+    assert "(texto, não regra)" in criterios  # a seção de critérios nunca é mexida
+    assert "- loja@x.com | pedido ENVIADO" in regras.NOTIF_RULES_FILE.read_text(encoding="utf-8")
+    assert len(isolado) == 2 and "loja@x.com" in isolado[0]
+    assert regras.adicionar("não é endereço", "", "agora") == "Regra inválida."
+    assert regras.adicionar("@x.com", "", "agora") == "Regra inválida."
+    assert regras.adicionar("loja@x.com", "a|b c", "agora") == "Regra inválida."
+
+
+def test_adicionar_criterio_no_fim_dos_criterios(isolado):
+    regras.NOTIF_RULES_FILE.write_text("## Silêncio\n\n## Critérios\n\nAvisar na hora:\n- prazo\n\n\n## Outra\nx\n",
+                                       encoding="utf-8")
+    assert "gravado" in regras.adicionar_criterio("Comprovante de Pix feito pelo próprio usuário", "silencio")
+    assert "gravado" in regras.adicionar_criterio("Débito automático já agendado", "resumo")
+    texto = regras.NOTIF_RULES_FILE.read_text(encoding="utf-8")
+    assert texto.index(regras.CORRECOES) < texto.index("Pix feito") < texto.index("Débito") < texto.index("## Outra")
+    assert texto.count(regras.CORRECOES) == 1
+    _, criterios = regras.ler()
+    assert "- Comprovante de Pix feito pelo próprio usuário → Silêncio" in criterios
+    assert "- Débito automático já agendado → Resumo diário" in criterios
+    assert regras.adicionar_criterio("curta", "agora") == "Critério inválido."
+    assert regras.adicionar_criterio("x" * 200, "agora") == "Critério inválido."
+    assert len(isolado) == 2
 
 
 def test_sem_arquivo_usa_exemplo():
@@ -120,6 +146,35 @@ def test_validar_aceita_so_o_formato_exato():
     assert classificador.validar(json.dumps([{"id": 0, "nivel": "agora", "resumo": "", "motivo": ""}] * 2), 2) is None
 
 
+def test_validar_proposta_confere_trecho_no_assunto():
+    assunto = "Seu Pix foi enviado: R$ 86,34"
+    ok = classificador.validar_proposta(json.dumps({"criterio": "Comprovante de Pix feito pelo usuário",
+                                                    "trecho": "pix  foi enviado"}), assunto)
+    assert ok == {"criterio": "Comprovante de Pix feito pelo usuário", "trecho": "pix foi enviado"}
+    inventado = classificador.validar_proposta(json.dumps({"criterio": "x" * 300, "trecho": "Pix recebido"}), assunto)
+    assert inventado == {"criterio": "", "trecho": ""}
+    assert classificador.validar_proposta("[]", assunto) is None
+    assert classificador.validar_proposta("não é json", assunto) is None
+
+
+def test_propor_sem_ferramentas(monkeypatch):
+    capturado = {}
+
+    class Falso:
+        def __init__(self, **kw):
+            self.models = self
+
+        def generate_content(self, model, contents, config):
+            capturado["config"] = config
+            return type("R", (), {"text": json.dumps({"criterio": "Recibo de compra feita", "trecho": "Oi"})})()
+
+    monkeypatch.setattr(classificador.genai, "Client", Falso)
+    it = email() | {"nivel": "agora"}
+    assert classificador.propor(it, "silencio") == {"criterio": "Recibo de compra feita", "trecho": ""}  # curto
+    assert not capturado["config"].tools
+    assert "avisar na hora" in capturado["config"].system_instruction
+
+
 def test_entrada_corta_cada_item():
     longo = email(assunto="x" * 2000)
     linha = json.loads(classificador.entrada([longo]))
@@ -129,7 +184,7 @@ def test_entrada_corta_cada_item():
 # --- Pipeline ---
 
 def test_decidir_regra_categoria_e_gemini(monkeypatch):
-    regras.NOTIF_RULES_FILE.write_text("## Avisar na hora\n- @promo.com\n", encoding="utf-8")
+    regras.NOTIF_RULES_FILE.write_text("## Avisar na hora\n- x@promo.com\n", encoding="utf-8")
     chamados = []
 
     def falso(itens, criterios):
@@ -143,7 +198,7 @@ def test_decidir_regra_categoria_e_gemini(monkeypatch):
         email("c", "z@site.com", "atualizacoes"),  # Gemini
     ], AGORA)
     assert [i["nivel"] for i in itens] == ["agora", "silencio", "agora"]
-    assert itens[0]["motivo"] == "regra: @promo.com" and itens[2]["motivo"] == "Gemini: m"
+    assert itens[0]["motivo"] == "regra: x@promo.com" and itens[2]["motivo"] == "Gemini: m"
     assert chamados == [["c"]] and db.chamadas_hoje(AGORA) == 1
 
 
@@ -232,3 +287,64 @@ def test_itens_velhos_sao_apagados():
     db.inserir([email("velho") | extra], AGORA - timedelta(days=31))
     db.inserir([email("novo") | extra], AGORA)
     assert db.ja_visto("gmail", ["velho", "novo"]) == {"novo"}
+
+
+# --- Correções ---
+
+def _gravado(nivel="agora", i="m1", **kw):
+    [item_id] = db.inserir([email(i, **kw) | {"nivel": nivel, "resumo": "r", "motivo": "m"}], AGORA)
+    return db.item(item_id)
+
+
+def test_corrigir_anota_e_guarda_proposta(monkeypatch):
+    pedidos = []
+    monkeypatch.setattr(classificador, "propor",
+                        lambda it, certo: pedidos.append(certo) or {"criterio": "Recibo qualquer", "trecho": "Oi"})
+    it = _gravado("agora")
+    prop = pipeline.corrigir(it, "silencio", AGORA)
+    assert prop["criterio"] == "Recibo qualquer" and pedidos == ["silencio"]
+    assert db.item(it["id"])["feedback"] == "silencio" and db.chamadas_hoje(AGORA) == 1
+    guardada = db.proposta(prop["id"])
+    assert guardada["nivel"] == "silencio" and guardada["item_id"] == it["id"]
+    assert db.apagar_proposta(prop["id"]) and not db.apagar_proposta(prop["id"])
+
+
+def test_corrigir_sem_cota_nao_chama_gemini(monkeypatch):
+    monkeypatch.setattr(pipeline, "NOTIF_GEMINI_LIMITE_DIA", 0)
+    monkeypatch.setattr(classificador, "propor", lambda it, certo: pytest.fail("não devia chamar o Gemini"))
+    prop = pipeline.corrigir(_gravado("resumo"), "agora", AGORA)
+    assert prop["criterio"] == "" and prop["trecho"] == ""
+
+
+def test_balanco_conta_correcoes_por_destino():
+    a, b, c = _gravado("agora", "a"), _gravado("resumo", "b"), _gravado("resumo", "c")
+    db.set_feedback(a["id"], "resumo")
+    db.set_feedback(b["id"], "silencio")
+    db.set_feedback(c["id"], "resumo")  # igual ao nível: não conta como correção
+    bal = db.balanco((AGORA - timedelta(days=1)).isoformat())
+    assert bal["agora"] == {"total": 1, "corrigidos": 1, "para": {"resumo": 1}}
+    assert bal["resumo"] == {"total": 2, "corrigidos": 1, "para": {"silencio": 1}}
+    assert bal["silencio"]["total"] == 0
+
+
+def test_botoes_mostram_so_os_outros_niveis():
+    from src.notificacoes import telegram as tg
+    it = _gravado("agora")
+    dados = [b.callback_data for linha in tg.botoes_alerta(it).inline_keyboard for b in linha if b.callback_data]
+    assert dados == [f"ntf:mv:{it['id']}:resumo", f"ntf:mv:{it['id']}:silencio"]
+
+    r = _gravado("resumo", "r")
+    [(texto, teclado)] = tg.mensagens_resumo([r], [], AGORA.isoformat(), AGORA.isoformat())
+    dados = [b.callback_data for linha in teclado.inline_keyboard for b in linha]
+    assert dados == [f"ntf:mv:{r['id']}:agora", f"ntf:mv:{r['id']}:silencio"] and "Corrigir" in texto
+    assert all(len(d.encode()) <= 64 for d in dados)
+
+
+def test_proposta_mostra_o_que_seria_gravado():
+    from src.notificacoes import telegram as tg
+    it = _gravado("resumo")
+    texto, teclado = tg.texto_proposta(it, "silencio", {"id": 7, "criterio": "Recibo <b>", "trecho": "Oi"})
+    assert "Recibo &lt;b&gt;" in texto and "“Oi”" in texto
+    assert [l[0].callback_data for l in teclado.inline_keyboard] == ["ntf:pc:7", "ntf:pt:7", "ntf:pe:7", "ntf:px:7"]
+    _, teclado = tg.texto_proposta(it, "silencio", {"id": 8, "criterio": "", "trecho": ""})
+    assert [l[0].callback_data for l in teclado.inline_keyboard] == ["ntf:pe:8", "ntf:px:8"]

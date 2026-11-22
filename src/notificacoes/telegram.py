@@ -1,4 +1,8 @@
-"""Lado do Telegram do filtro: alertas, resumos das 12h e 19h, botões 👍/👎 e balanço do modo sombra.
+"""Lado do Telegram do filtro: alertas, resumos das 12h e 19h, botões de correção e balanço do modo sombra.
+
+Cada e-mail mostra os níveis para onde ele poderia ter ido; apertar um quer dizer "devia ter ido para cá", e
+não apertar nada quer dizer que o filtro acertou. Depois da correção, a ALICE propõe um ajuste (frase de
+critério, regra remetente + assunto ou regra só por remetente), que só é gravado depois do ✅ do usuário.
 
 Tudo sai direto pela API do bot e nada passa por src.history: o agente com ferramentas nunca vê o texto dos
 e-mails, nem quando o usuário responde a um alerta. Todo texto vindo de e-mail é escapado para HTML.
@@ -23,11 +27,21 @@ CICLO_SEGUNDOS = 30
 GMAIL_SEGUNDOS = 300
 ITENS_POR_MENSAGEM = 15
 SILENCIADOS_MAX = 25
-# Domínios de e-mail pessoal: propor regra para o domínio inteiro não faz sentido
-WEBMAIL = {"gmail.com", "googlemail.com", "hotmail.com", "outlook.com", "live.com", "yahoo.com", "yahoo.com.br",
-           "icloud.com", "me.com", "bol.com.br", "uol.com.br", "proton.me", "protonmail.com"}
 NOME_NIVEL = {"agora": "na hora", "resumo": "no resumo", "silencio": "em silêncio"}
-ABAIXO = {"agora": "resumo", "resumo": "silencio"}
+ROTULO = {"agora": "agora", "resumo": "resumo", "silencio": "silêncio"}
+ICONE = {"agora": "🔔", "resumo": "📬", "silencio": "🔇"}
+LEGENDA = {"agora": "🔔 devia avisar na hora", "resumo": "📬 devia ir para o resumo",
+           "silencio": "🔇 nem precisava ver"}
+
+
+def botao_nivel(item_id: int, nivel: str, n: int | None = None) -> InlineKeyboardButton:
+    """Botão "devia ter ido para `nivel`"; com n, a versão curta numerada das listas."""
+    texto = f"{n} {ICONE[nivel]}" if n is not None else f"{ICONE[nivel]} {ROTULO[nivel]}"
+    return InlineKeyboardButton(texto, callback_data=f"ntf:mv:{item_id}:{nivel}")
+
+
+def legenda(*niveis: str) -> str:
+    return "<i>Corrigir: " + " · ".join(LEGENDA[n] for n in niveis) + "</i>"
 
 
 def esc(texto: str) -> str:
@@ -47,14 +61,13 @@ def texto_alerta(it: dict) -> str:
 
 def botoes_alerta(it: dict) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("👍 importante", callback_data=f"ntf:up:{it['id']}"),
-         InlineKeyboardButton("👎 ruído", callback_data=f"ntf:dn:{it['id']}")],
+        [botao_nivel(it["id"], "resumo"), botao_nivel(it["id"], "silencio")],
         [InlineKeyboardButton("Abrir no Gmail", url=it["link"])],
     ])
 
 
 def mensagens_resumo(itens: list[dict], silenciados: list[dict], desde: str, ate: str) -> list[tuple[str, InlineKeyboardMarkup | None]]:
-    """O resumo em uma ou mais mensagens: agrupado por remetente, 👍/👎 por item, silenciados no rodapé."""
+    """O resumo em uma ou mais mensagens: agrupado por remetente, correção por item, silenciados no rodapé."""
     grupos: dict[str, list[dict]] = {}
     for it in itens:
         grupos.setdefault(it["endereco"] or it["remetente"], []).append(it)
@@ -66,6 +79,8 @@ def mensagens_resumo(itens: list[dict], silenciados: list[dict], desde: str, ate
         linhas, botoes, anterior = [], [], None
         if inicio == 0:
             linhas.append(f"{prefixo()}📬 <b>Resumo · {len(itens)} e-mail{'s' if len(itens) != 1 else ''}</b>")
+            if itens:
+                linhas.append(legenda("agora", "silencio"))
         for n, it in enumerate(pedaco, inicio + 1):
             chave = it["endereco"] or it["remetente"]
             if chave != anterior:
@@ -73,8 +88,7 @@ def mensagens_resumo(itens: list[dict], silenciados: list[dict], desde: str, ate
                 linhas.append(f"\n<b>{esc(it['remetente'])}</b>" + (f" ({qtd})" if qtd > 1 else ""))
                 anterior = chave
             linhas.append(f"{n}. {esc(it['resumo'])} · <a href=\"{esc(it['link'])}\">abrir</a>")
-            botoes += [InlineKeyboardButton(f"{n} 👍", callback_data=f"ntf:up:{it['id']}"),
-                       InlineKeyboardButton(f"{n} 👎", callback_data=f"ntf:dn:{it['id']}")]
+            botoes += [botao_nivel(it["id"], "agora", n), botao_nivel(it["id"], "silencio", n)]
         teclado = [botoes[i:i + 4] for i in range(0, len(botoes), 4)]
         partes.append((linhas, teclado))
 
@@ -95,13 +109,15 @@ def mensagens_resumo(itens: list[dict], silenciados: list[dict], desde: str, ate
 
 def texto_balanco(desde: str) -> str:
     b = db.balanco(desde)
-    return (f"{prefixo()}📊 <b>Balanço do filtro</b> desde {datetime.fromisoformat(desde):%d/%m}\n"
-            f"• na hora: {b['agora']['total']} (👎 alarme falso: {b['agora']['down']})\n"
-            f"• no resumo: {b['resumo']['total']} (👍 deveria ter avisado: {b['resumo']['up']}, "
-            f"👎 ruído: {b['resumo']['down']})\n"
-            f"• em silêncio: {b['silencio']['total']} (👍 escapou: {b['silencio']['up']})\n\n"
-            "Se estiver bom: desligue as notificações do Gmail no celular e ponha <code>NOTIF_SOMBRA=0</code> "
-            "no alice.env (reinicie a ALICE). Se não, continue apertando 👍/👎.")
+    linhas = [f"{prefixo()}📊 <b>Balanço do filtro</b> desde {datetime.fromisoformat(desde):%d/%m}"]
+    for nivel, dados in b.items():
+        linha = f"• {NOME_NIVEL[nivel]}: {dados['total']} · corrigidos: {dados['corrigidos']}"
+        if dados["para"]:
+            linha += " (" + ", ".join(f"→ {ROTULO[d]} {n}" for d, n in dados["para"].items()) + ")"
+        linhas.append(linha)
+    linhas.append("\nSe estiver bom: desligue as notificações do Gmail no celular e ponha <code>NOTIF_SOMBRA=0</code> "
+                  "no alice.env (reinicie a ALICE). Se não, continue corrigindo pelos botões.")
+    return "\n".join(linhas)
 
 
 # --- Loop ---
@@ -185,7 +201,7 @@ async def loop(bot) -> None:
 # --- Botões e comando ---
 
 async def _tirar_botoes(query, item_id: int, nota: str) -> None:
-    """Tira da mensagem os botões desse item e anota o que aconteceu (como nos lembretes)."""
+    """Tira da mensagem os botões de correção desse item e anota o que aconteceu (como nos lembretes)."""
     message = query.message
     if not isinstance(message, Message) or not message.reply_markup:
         return
@@ -193,7 +209,7 @@ async def _tirar_botoes(query, item_id: int, nota: str) -> None:
     for linha in message.reply_markup.inline_keyboard:
         mantidos = []
         for b in linha:
-            if b.callback_data and b.callback_data.split(":")[2:3] == [str(item_id)] and b.callback_data[4:6] in ("up", "dn"):
+            if (b.callback_data or "").startswith(f"ntf:mv:{item_id}:"):
                 primeiro = b.text.split()[0]
                 rotulo = f"{primeiro}: " if primeiro.isdigit() else ""
             else:
@@ -208,16 +224,53 @@ async def _tirar_botoes(query, item_id: int, nota: str) -> None:
         logger.warning(f"Não consegui editar a mensagem do filtro: {e}")
 
 
-async def _propor_regra(query, it: dict, alvo: str) -> None:
-    dominio = it["endereco"].rsplit("@", 1)[-1]
-    linha = [InlineKeyboardButton(f"✅ só {it['endereco']}"[:60], callback_data=f"ntf:ok:{it['id']}:{alvo}:e")]
-    if dominio and dominio not in WEBMAIL:
-        linha.append(InlineKeyboardButton(f"✅ todo @{dominio}"[:60], callback_data=f"ntf:ok:{it['id']}:{alvo}:d"))
-    teclado = InlineKeyboardMarkup([linha, [InlineKeyboardButton("✖️ não", callback_data=f"ntf:no:{it['id']}")]])
-    await query.message.reply_text(
-        f"Gravar regra? E-mails de <b>{esc(it['remetente'])}</b> &lt;{esc(it['endereco'])}&gt; "
-        f"passam a ir <b>{NOME_NIVEL[alvo]}</b>, sem passar pelo Gemini.",
-        parse_mode=constants.ParseMode.HTML, reply_markup=teclado)
+def texto_proposta(it: dict, certo: str, prop: dict) -> tuple[str, InlineKeyboardMarkup]:
+    """A proposta de ajuste depois de uma correção: o texto mostra por inteiro o que seria gravado."""
+    endereco = esc(it["endereco"])
+    linhas = [f"✏️ Corrigido: <b>{esc(it['remetente'])}</b> · {esc(it['assunto'][:80])} → <b>{NOME_NIVEL[certo]}</b>.",
+              "Gravar um ajuste? Nada muda sem o ✅.", ""]
+    botoes = []
+    if prop["criterio"]:
+        linhas.append(f"• <b>Critério</b> (vai para o Gemini, vale para qualquer remetente): "
+                      f"“{esc(prop['criterio'])}” → {ROTULO[certo]}")
+        botoes.append([InlineKeyboardButton("✅ critério", callback_data=f"ntf:pc:{prop['id']}")])
+    if prop["trecho"]:
+        linhas.append(f"• <b>Remetente + assunto</b> (sem Gemini): <code>{endereco}</code> com "
+                      f"“{esc(prop['trecho'])}” no assunto")
+        botoes.append([InlineKeyboardButton("✅ remetente + assunto", callback_data=f"ntf:pt:{prop['id']}")])
+    linhas.append(f"• <b>Só remetente</b> (sem Gemini): tudo de <code>{endereco}</code>")
+    botoes.append([InlineKeyboardButton("✅ só remetente", callback_data=f"ntf:pe:{prop['id']}")])
+    if not prop["criterio"] and not prop["trecho"]:
+        linhas.append("\n<i>Sem sugestão de critério nem de trecho (Gemini indisponível, sem cota ou sem um trecho "
+                      "fixo no assunto).</i>")
+    botoes.append([InlineKeyboardButton("✖️ não", callback_data=f"ntf:px:{prop['id']}")])
+    return "\n".join(linhas), InlineKeyboardMarkup(botoes)
+
+
+async def _corrigir(query, it: dict, certo: str) -> None:
+    await query.answer("Anotado.")
+    await _tirar_botoes(query, it["id"], f"{ICONE[certo]} devia ir {NOME_NIVEL[certo]}")
+    prop = await asyncio.to_thread(pipeline.corrigir, it, certo)
+    texto, teclado = texto_proposta(it, certo, prop)
+    await query.message.reply_text(texto, parse_mode=constants.ParseMode.HTML, reply_markup=teclado)
+
+
+async def _aplicar(query, acao: str, proposta_id: int) -> None:
+    prop = await asyncio.to_thread(db.proposta, proposta_id)
+    it = prop and await asyncio.to_thread(db.item, prop["item_id"])
+    # Apagar antes de gravar: um segundo toque no mesmo botão não grava duas vezes
+    if not prop or not await asyncio.to_thread(db.apagar_proposta, proposta_id):
+        await query.answer("Essa proposta já foi usada ou expirou.")
+        return
+    if acao == "px" or not it:
+        resultado = "Sem ajuste; a correção ficou anotada para o balanço."
+    elif acao == "pc":
+        resultado = await asyncio.to_thread(regras.adicionar_criterio, prop["criterio"], prop["nivel"])
+    else:
+        trecho = prop["trecho"] if acao == "pt" else ""
+        resultado = await asyncio.to_thread(regras.adicionar, it["endereco"], trecho, prop["nivel"])
+    await query.answer(resultado[:200])
+    await query.edit_message_text(esc(resultado), parse_mode=constants.ParseMode.HTML)
 
 
 async def botao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -236,35 +289,27 @@ async def botao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await query.message.reply_text("Nenhum silenciado nesse intervalo (ou já foram apagados).")
             return
         linhas = [f"{n}. {esc(it["remetente"][:40])} · {esc(it["assunto"][:80])}" for n, it in enumerate(itens, 1)]
-        botoes = [InlineKeyboardButton(f"{n} 👍", callback_data=f"ntf:up:{it['id']}") for n, it in enumerate(itens, 1)]
-        await query.message.reply_text("🔇 <b>Silenciados</b>\n" + "\n".join(linhas), parse_mode=constants.ParseMode.HTML,
-                                       reply_markup=InlineKeyboardMarkup([botoes[i:i + 5] for i in range(0, len(botoes), 5)]))
+        botoes = [b for n, it in enumerate(itens, 1) for b in (botao_nivel(it["id"], "agora", n),
+                                                               botao_nivel(it["id"], "resumo", n))]
+        await query.message.reply_text(
+            "🔇 <b>Silenciados</b>\n" + legenda("agora", "resumo") + "\n\n" + "\n".join(linhas),
+            parse_mode=constants.ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup([botoes[i:i + 4] for i in range(0, len(botoes), 4)]))
         return
 
-    item_id = int(partes[2])
-    it = await asyncio.to_thread(db.item, item_id)
-    if not it:
-        await query.answer("Esse e-mail já saiu do histórico (30 dias).")
-        return
-
-    if acao in ("up", "dn"):
-        await asyncio.to_thread(db.set_feedback, item_id, acao.replace("dn", "down"))
-        alvo = "agora" if acao == "up" else ABAIXO.get(it["nivel"])
-        if alvo == it["nivel"] or alvo is None:
-            await query.answer("Anotado.")
+    if acao == "mv" and len(partes) == 4 and partes[3] in db.NIVEIS:
+        it = await asyncio.to_thread(db.item, int(partes[2]))
+        if not it:
+            await query.answer("Esse e-mail já saiu do histórico (30 dias).")
+        elif partes[3] == it["nivel"]:
+            await query.answer("Ele já está nesse nível.")
         else:
-            await query.answer("Anotado. Quer gravar uma regra?")
-            await _propor_regra(query, it, alvo)
-        await _tirar_botoes(query, item_id, "👍 importante" if acao == "up" else "👎 ruído")
-    elif acao == "ok":
-        alvo, escopo = partes[3], partes[4]
-        regra = it["endereco"] if escopo == "e" else "@" + it["endereco"].rsplit("@", 1)[-1]
-        resultado = await asyncio.to_thread(regras.adicionar, regra, alvo)
-        await query.answer(resultado)
-        await query.edit_message_text(esc(resultado), parse_mode=constants.ParseMode.HTML)
-    elif acao == "no":
-        await query.answer("Sem regra.")
-        await query.edit_message_text("Sem regra nova; só anotei o 👍/👎 para o balanço.")
+            await _corrigir(query, it, partes[3])
+    elif acao in ("pc", "pt", "pe", "px"):
+        await _aplicar(query, acao, int(partes[2]))
+    else:
+        # Botões 👍/👎 do formato anterior, em mensagens antigas
+        await query.answer("Botão de um formato antigo; use os das mensagens novas.")
 
 
 async def filtro_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

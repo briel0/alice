@@ -11,5 +11,5 @@ Módulos:
 - gmail.py         leitura do Gmail só com gmail.readonly (cabeçalhos e snippet, nunca o corpo)
 - classificador.py Gemini sem ferramentas, em lote, com saída validada
 - pipeline.py      uma rodada: Gmail → regras → classificador → SQLite; e a montagem dos resumos
-- telegram.py      alertas, resumos, botões 👍/👎 e balanço, enviados direto pela API do bot
+- telegram.py      alertas, resumos, botões de correção e balanço, enviados direto pela API do bot
 """

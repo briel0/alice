@@ -1,8 +1,11 @@
 # Filtro de notificações
 
-Copie para data/notificacoes-regras.md. Regras fixas: uma por linha, "- endereco@exemplo.com" ou
-"- @exemplo.com" (o domínio inteiro). Elas valem antes de tudo e não passam pelo Gemini. Os botões 👍/👎
-propõem regras novas e só gravam depois do seu "sim".
+Copie para data/notificacoes-regras.md. Regras fixas, uma por linha, de dois tipos:
+- "- endereco@exemplo.com": tudo desse remetente;
+- "- endereco@exemplo.com | trecho do assunto": desse remetente, quando o assunto contém o trecho.
+Elas valem antes de tudo e não passam pelo Gemini; remetente + assunto vence só remetente. Os botões de correção
+no Telegram propõem uma regra ou uma frase de critério e só gravam depois do seu "sim". As frases aceitas
+entram no fim de "Critérios", em "Correções do usuário".
 
 ## Avisar na hora
 

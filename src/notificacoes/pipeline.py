@@ -26,7 +26,7 @@ def decidir(itens: list[dict], at: datetime | None = None, releitura: bool = Fal
     fixas, criterios = regras.ler()
     para_gemini = []
     for it in itens:
-        casou = regras.nivel_por_regra(it["endereco"], fixas)
+        casou = regras.nivel_por_regra(it["endereco"], it["assunto"], fixas)
         if casou:
             it["nivel"], it["motivo"] = casou[0], f"regra: {casou[1]}"
         elif it["categoria"] in SILENCIO_CATEGORIAS:
@@ -56,6 +56,19 @@ def decidir(itens: list[dict], at: datetime | None = None, releitura: bool = Fal
             if it["nivel"] == "agora":
                 it["nivel"], it["motivo"] = "resumo", it["motivo"] + " (relido depois de um tempo fora do ar)"
     return itens
+
+
+def corrigir(it: dict, certo: str, at: datetime | None = None) -> dict:
+    """Anota a correção do usuário e prepara a proposta de ajuste (ainda sem gravar nada no arquivo de regras).
+    Devolve {"id", "criterio", "trecho"}; criterio e trecho vêm vazios sem cota ou com o Gemini falhando."""
+    db.set_feedback(it["id"], certo)
+    sugestao = None
+    if db.chamadas_hoje(at) < NOTIF_GEMINI_LIMITE_DIA:
+        db.contar_chamada(at)
+        sugestao = classificador.propor(it, certo)
+    sugestao = sugestao or {"criterio": "", "trecho": ""}
+    pid = db.nova_proposta(it["id"], certo, sugestao["criterio"], sugestao["trecho"], at)
+    return {"id": pid, **sugestao}
 
 
 def rodada(gmail: Gmail, at: datetime | None = None) -> int:
