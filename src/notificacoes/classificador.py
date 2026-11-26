@@ -10,12 +10,13 @@ sugere uma frase de critério e o trecho estável do assunto. Nada disso grava: 
 """
 import json
 import logging
+from datetime import datetime
 
 from google import genai
 from google.genai import types
 
 from src.config import NOTIF_GEMINI_API_KEY, NOTIF_GEMINI_MODEL
-from src.notificacoes import regras
+from src.notificacoes import db, regras
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +24,11 @@ LOTE_MAX = 30
 TEXTO_MAX = 500
 RESUMO_MAX = 120
 MOTIVO_MAX = 80
+DIAS = ("seg", "ter", "qua", "qui", "sex", "sáb", "dom")
 
-INSTRUCOES = """Você é um filtro de e-mails. Para cada e-mail da lista, decida o nível:
+INSTRUCOES = """Você é um filtro de e-mails. Agora é {agora} (horário de Brasília), e cada e-mail diz quando chegou:
+use isso para julgar prazos ("vence amanhã" num e-mail de três dias atrás já venceu).
+Para cada e-mail da lista, decida o nível:
 - "agora": o usuário precisa saber nas próximas horas.
 - "resumo": vale ver hoje, mas pode esperar o próximo resumo (12h ou 19h).
 - "silencio": ruído; não precisa ver.
@@ -55,11 +59,25 @@ SCHEMA = types.Schema(
 )
 
 
+def quando(at: datetime) -> str:
+    """Dia da semana, data e hora no fuso do usuário: "qui 26/11/2026 14:05"."""
+    at = at.astimezone(db.TZ)
+    return f"{DIAS[at.weekday()]} {at:%d/%m/%Y %H:%M}"
+
+
+def _recebido(it: dict) -> str:
+    try:
+        return quando(datetime.fromisoformat(it["recebido_em"]))
+    except (KeyError, TypeError, ValueError):
+        return "?"
+
+
 def entrada(itens: list[dict]) -> str:
     """O lote como texto: cada item cortado em TEXTO_MAX caracteres."""
     linhas = []
     for i, it in enumerate(itens):
-        texto = f"De: {it['remetente']} <{it['endereco']}>\nCategoria: {it['categoria']}\n" \
+        texto = f"De: {it['remetente']} <{it['endereco']}>\nRecebido: {_recebido(it)}\n" \
+                f"Categoria: {it['categoria']}\n" \
                 f"Assunto: {it['assunto']}\nTrecho: {it['trecho']}"
         linhas.append(json.dumps({"id": i, "email": texto[:TEXTO_MAX]}, ensure_ascii=False))
     return "\n".join(linhas)
@@ -91,10 +109,11 @@ def validar(bruto: str, n: int) -> list[dict] | None:
     return [por_id[i] for i in range(n)]
 
 
-def classificar(itens: list[dict], criterios: str) -> list[dict] | None:
+def classificar(itens: list[dict], criterios: str, at: datetime | None = None) -> list[dict] | None:
     """Uma chamada ao Gemini para até LOTE_MAX itens. None se falhar ou vier fora do formato."""
     assert len(itens) <= LOTE_MAX
-    bruto = _chamar(INSTRUCOES.format(criterios=criterios or "(nenhum ainda)"), SCHEMA, entrada(itens))
+    instrucao = INSTRUCOES.format(agora=quando(at or db.now()), criterios=criterios or "(nenhum ainda)")
+    bruto = _chamar(instrucao, SCHEMA, entrada(itens))
     resultado = None if bruto is None else validar(bruto, len(itens))
     if bruto is not None and resultado is None:
         logger.warning("Classificador: resposta fora do formato; o lote vai para o resumo")

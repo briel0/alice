@@ -187,7 +187,7 @@ def test_decidir_regra_categoria_e_gemini(monkeypatch):
     regras.NOTIF_RULES_FILE.write_text("## Avisar na hora\n- x@promo.com\n", encoding="utf-8")
     chamados = []
 
-    def falso(itens, criterios):
+    def falso(itens, criterios, at=None):
         chamados.append([i["ext_id"] for i in itens])
         return [{"nivel": "agora", "resumo": "r", "motivo": "m"} for _ in itens]
 
@@ -203,7 +203,7 @@ def test_decidir_regra_categoria_e_gemini(monkeypatch):
 
 
 def test_decidir_sem_cota_ou_com_falha_vai_para_resumo(monkeypatch):
-    monkeypatch.setattr(classificador, "classificar", lambda itens, c: None)
+    monkeypatch.setattr(classificador, "classificar", lambda itens, c, at=None: None)
     [it] = pipeline.decidir([email()], AGORA)
     assert it["nivel"] == "resumo" and it["motivo"] == "classificador indisponível"
 
@@ -215,13 +215,13 @@ def test_decidir_sem_cota_ou_com_falha_vai_para_resumo(monkeypatch):
 def test_decidir_lotes_de_30(monkeypatch):
     tamanhos = []
     monkeypatch.setattr(classificador, "classificar",
-                        lambda itens, c: tamanhos.append(len(itens)) or [{"nivel": "resumo", "resumo": "", "motivo": ""}] * len(itens))
+                        lambda itens, c, at=None: tamanhos.append(len(itens)) or [{"nivel": "resumo", "resumo": "", "motivo": ""}] * len(itens))
     pipeline.decidir([email(str(i)) for i in range(65)], AGORA)
     assert tamanhos == [30, 30, 5]
 
 
 def test_releitura_nao_alerta(monkeypatch):
-    monkeypatch.setattr(classificador, "classificar", lambda itens, c: [{"nivel": "agora", "resumo": "", "motivo": "m"}])
+    monkeypatch.setattr(classificador, "classificar", lambda itens, c, at=None: [{"nivel": "agora", "resumo": "", "motivo": "m"}])
     [it] = pipeline.decidir([email()], AGORA, releitura=True)
     assert it["nivel"] == "resumo" and "relido" in it["motivo"]
 
@@ -246,7 +246,7 @@ class GmailFalso:
 
 
 def test_rodada_comeca_de_agora_e_ignora_repetidos(monkeypatch):
-    monkeypatch.setattr(classificador, "classificar", lambda itens, c: [{"nivel": "agora", "resumo": "", "motivo": ""}] * len(itens))
+    monkeypatch.setattr(classificador, "classificar", lambda itens, c, at=None: [{"nivel": "agora", "resumo": "", "motivo": ""}] * len(itens))
     assert pipeline.rodada(GmailFalso(["a"]), AGORA) == 0  # primeira: só guarda o historyId
     assert db.get_estado("gmail_history_id") == "900"
     assert pipeline.rodada(GmailFalso(["a", "b"]), AGORA) == 2
@@ -256,7 +256,7 @@ def test_rodada_comeca_de_agora_e_ignora_repetidos(monkeypatch):
 
 
 def test_rodada_com_historico_expirado_rele_sem_alerta(monkeypatch):
-    monkeypatch.setattr(classificador, "classificar", lambda itens, c: [{"nivel": "agora", "resumo": "", "motivo": ""}] * len(itens))
+    monkeypatch.setattr(classificador, "classificar", lambda itens, c, at=None: [{"nivel": "agora", "resumo": "", "motivo": ""}] * len(itens))
     db.set_estado("gmail_history_id", "1")
     assert pipeline.rodada(GmailFalso(["a"], expirado=True), AGORA) == 1
     assert db.alertas_pendentes() == [] and len(db.resumo_pendente()) == 1
@@ -334,7 +334,8 @@ def test_botoes_mostram_so_os_outros_niveis():
     assert dados == [f"ntf:mv:{it['id']}:resumo", f"ntf:mv:{it['id']}:silencio"]
 
     r = _gravado("resumo", "r")
-    [(texto, teclado)] = tg.mensagens_resumo([r], [], AGORA.isoformat(), AGORA.isoformat())
+    [(texto, teclado, ids)] = tg.mensagens_resumo([r], [], AGORA.isoformat(), AGORA.isoformat())
+    assert ids == [r["id"]]
     dados = [b.callback_data for linha in teclado.inline_keyboard for b in linha]
     assert dados == [f"ntf:mv:{r['id']}:agora", f"ntf:mv:{r['id']}:silencio"] and "Corrigir" in texto
     assert all(len(d.encode()) <= 64 for d in dados)
@@ -348,3 +349,65 @@ def test_proposta_mostra_o_que_seria_gravado():
     assert [l[0].callback_data for l in teclado.inline_keyboard] == ["ntf:pc:7", "ntf:pt:7", "ntf:pe:7", "ntf:px:7"]
     _, teclado = tg.texto_proposta(it, "silencio", {"id": 8, "criterio": "", "trecho": ""})
     assert [l[0].callback_data for l in teclado.inline_keyboard] == ["ntf:pe:8", "ntf:px:8"]
+
+
+# --- Data para o classificador, links e resumo longo ---
+
+def test_classificador_recebe_data_de_agora_e_de_chegada(monkeypatch):
+    capturado = {}
+
+    class Falso:
+        def __init__(self, **kw):
+            self.models = self
+
+        def generate_content(self, model, contents, config):
+            capturado["instrucao"], capturado["conteudo"] = config.system_instruction, contents
+            return type("R", (), {"text": json.dumps([{"id": 0, "nivel": "resumo", "resumo": "x", "motivo": "y"}])})()
+
+    monkeypatch.setattr(classificador.genai, "Client", Falso)
+    # Recebido em UTC: aparece no fuso do usuário
+    it = email() | {"recebido_em": "2026-11-18T12:30:00+00:00"}
+    classificador.classificar([it], "", AGORA)
+    assert "sex 20/11/2026 14:00" in capturado["instrucao"]
+    assert "Recebido: qua 18/11/2026 09:30" in json.loads(capturado["conteudo"])["email"]
+
+
+def test_pipeline_passa_o_horario_ao_classificador(monkeypatch):
+    vistos = []
+    monkeypatch.setattr(classificador, "classificar",
+                        lambda itens, c, at=None: vistos.append(at) or [{"nivel": "resumo", "resumo": "", "motivo": ""}])
+    pipeline.decidir([email()], AGORA)
+    assert vistos == [AGORA]
+
+
+def test_links_do_email_nao_ficam_clicaveis():
+    from src.notificacoes import telegram as tg
+    it = _gravado("agora") | {"assunto": "Acesse https://banco-falso.com/login já", "resumo": "Veja em site.com.br",
+                              "motivo": "m", "remetente": "Loja.com"}
+    texto = tg.texto_alerta(it)
+    for dominio in ("banco-falso.com", "site.com.br", "Loja.com", "https://"):
+        assert dominio not in texto
+    assert "banco-falso․com/login" in texto and "R$ 86,34" in tg.esc("R$ 86,34")
+
+
+def test_resumo_longo_quebra_por_tamanho_e_repete_o_remetente():
+    from src.notificacoes import telegram as tg
+    itens = [_gravado("resumo", f"r{i}") | {"remetente": f"Remetente {i} " + "n" * 70, "endereco": f"a{i}@x.com",
+                                           "resumo": "r" * 120} for i in range(14)]
+    itens += [_gravado("resumo", f"s{i}") | {"remetente": "Mesmo", "endereco": "mesmo@x.com", "resumo": "s"}
+              for i in range(20)]
+    partes = tg.mensagens_resumo(itens, [], AGORA.isoformat(), AGORA.isoformat())
+    assert all(len(t) <= tg.TEXTO_MAX_MENSAGEM for t, _, _ in partes)
+    assert all(len(ids) <= tg.ITENS_POR_MENSAGEM for _, _, ids in partes)
+    assert [i for _, _, ids in partes for i in ids] == [it["id"] for it in itens]
+    # Toda mensagem depois da primeira começa com o nome de um remetente
+    assert all(t.startswith("<b>") for t, _, _ in partes[1:])
+
+
+def test_resumo_vazio_so_com_silenciados():
+    from src.notificacoes import telegram as tg
+    s = _gravado("silencio", "q")
+    [(texto, teclado, ids)] = tg.mensagens_resumo([], [s], AGORA.isoformat(), (AGORA + timedelta(hours=1)).isoformat())
+    assert texto.startswith("🧪 📬 <b>Resumo · nada para ver</b>") or texto.startswith("📬 <b>Resumo · nada para ver</b>")
+    assert "0 e-mail" not in texto and ids == [] and "ver silenciados" in str(teclado)
+

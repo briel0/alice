@@ -10,6 +10,7 @@ e-mails, nem quando o usuário responde a um alerta. Todo texto vindo de e-mail 
 import asyncio
 import html
 import logging
+import re
 import time
 from datetime import datetime
 
@@ -26,6 +27,9 @@ logger = logging.getLogger(__name__)
 CICLO_SEGUNDOS = 30
 GMAIL_SEGUNDOS = 300
 ITENS_POR_MENSAGEM = 15
+# O Telegram recusa mensagens acima de 4096 caracteres; a folga cobre o rodapé dos silenciados
+TEXTO_MAX_MENSAGEM = 3500
+DOMINIO = re.compile(r"(?:https?://)?((?:[\w-]+\.)+[a-z]{2,})\b", re.IGNORECASE)
 SILENCIADOS_MAX = 25
 NOME_NIVEL = {"agora": "na hora", "resumo": "no resumo", "silencio": "em silêncio"}
 ROTULO = {"agora": "agora", "resumo": "resumo", "silencio": "silêncio"}
@@ -45,7 +49,10 @@ def legenda(*niveis: str) -> str:
 
 
 def esc(texto: str) -> str:
-    return html.escape(texto or "", quote=False)
+    """Escapa para HTML e desarma links: o Telegram deixa clicável qualquer URL ou domínio em texto puro, e o texto
+    vem do e-mail (ou do Gemini lendo o e-mail). O ponto dos domínios vira "․" (U+2024), que lê igual e não vira link."""
+    texto = DOMINIO.sub(lambda m: m.group(1).replace(".", "․"), texto or "")
+    return html.escape(texto, quote=False)
 
 
 def prefixo() -> str:
@@ -66,33 +73,45 @@ def botoes_alerta(it: dict) -> InlineKeyboardMarkup:
     ])
 
 
-def mensagens_resumo(itens: list[dict], silenciados: list[dict], desde: str, ate: str) -> list[tuple[str, InlineKeyboardMarkup | None]]:
-    """O resumo em uma ou mais mensagens: agrupado por remetente, correção por item, silenciados no rodapé."""
+def mensagens_resumo(itens: list[dict], silenciados: list[dict], desde: str,
+                     ate: str) -> list[tuple[str, InlineKeyboardMarkup | None, list[int]]]:
+    """O resumo em uma ou mais mensagens: agrupado por remetente, correção por item, silenciados no rodapé.
+    Cada mensagem vem com os ids dos itens que ela mostra, para marcar como enviado só o que saiu. Uma mensagem
+    fecha em ITENS_POR_MENSAGEM itens ou perto de TEXTO_MAX_MENSAGEM caracteres, o que vier antes."""
     grupos: dict[str, list[dict]] = {}
     for it in itens:
         grupos.setdefault(it["endereco"] or it["remetente"], []).append(it)
     ordenados = [it for grupo in grupos.values() for it in grupo]
 
-    partes = []
-    for inicio in range(0, max(len(ordenados), 1), ITENS_POR_MENSAGEM):
-        pedaco = ordenados[inicio:inicio + ITENS_POR_MENSAGEM]
-        linhas, botoes, anterior = [], [], None
-        if inicio == 0:
-            linhas.append(f"{prefixo()}📬 <b>Resumo · {len(itens)} e-mail{'s' if len(itens) != 1 else ''}</b>")
-            if itens:
-                linhas.append(legenda("agora", "silencio"))
-        for n, it in enumerate(pedaco, inicio + 1):
-            chave = it["endereco"] or it["remetente"]
-            if chave != anterior:
-                qtd = len(grupos[chave])
-                linhas.append(f"\n<b>{esc(it['remetente'])}</b>" + (f" ({qtd})" if qtd > 1 else ""))
-                anterior = chave
-            linhas.append(f"{n}. {esc(it['resumo'])} · <a href=\"{esc(it['link'])}\">abrir</a>")
-            botoes += [botao_nivel(it["id"], "agora", n), botao_nivel(it["id"], "silencio", n)]
-        teclado = [botoes[i:i + 4] for i in range(0, len(botoes), 4)]
-        partes.append((linhas, teclado))
+    def cabecalho(it: dict) -> str:
+        qtd = len(grupos[it["endereco"] or it["remetente"]])
+        return f"\n<b>{esc(it['remetente'])}</b>" + (f" ({qtd})" if qtd > 1 else "")
 
-    linhas, teclado = partes[-1]
+    if itens:
+        titulo = [f"{prefixo()}📬 <b>Resumo · {len(itens)} e-mail{'s' if len(itens) != 1 else ''}</b>",
+                  legenda("agora", "silencio")]
+    else:
+        titulo = [f"{prefixo()}📬 <b>Resumo · nada para ver</b>"]
+
+    partes = []
+    linhas, botoes, ids, anterior = titulo, [], [], None
+    for n, it in enumerate(ordenados, 1):
+        chave = it["endereco"] or it["remetente"]
+        item = f"{n}. {esc(it['resumo'])} · <a href=\"{html.escape(it['link'])}\">abrir</a>"
+        novas = ([cabecalho(it)] if chave != anterior else []) + [item]
+        tamanho = sum(len(l) + 1 for l in linhas + novas)
+        if ids and (len(ids) >= ITENS_POR_MENSAGEM or tamanho > TEXTO_MAX_MENSAGEM):
+            partes.append((linhas, botoes, ids))
+            linhas, botoes, ids = [], [], []
+            novas = [cabecalho(it), item]  # numa mensagem nova, repete o remetente
+        linhas += novas
+        botoes += [botao_nivel(it["id"], "agora", n), botao_nivel(it["id"], "silencio", n)]
+        ids.append(it["id"])
+        anterior = chave
+    partes.append((linhas, botoes, ids))
+    partes = [(l, [b[k:k + 4] for k in range(0, len(b), 4)], ids) for l, b, ids in partes]
+
+    linhas, teclado, _ = partes[-1]
     if silenciados:
         por_cat: dict[str, int] = {}
         for it in silenciados:
@@ -102,9 +121,7 @@ def mensagens_resumo(itens: list[dict], silenciados: list[dict], desde: str, ate
         linhas.append(f"\n<i>{len(silenciados)} em silêncio: {detalhe}</i>")
         de, a = int(datetime.fromisoformat(desde).timestamp()), int(datetime.fromisoformat(ate).timestamp())
         teclado.append([InlineKeyboardButton("ver silenciados", callback_data=f"ntf:sil:{de}:{a}")])
-    if not itens:
-        linhas.insert(0, f"{prefixo()}📬 <b>Resumo · nada para ver</b>")
-    return [("\n".join(l).strip(), InlineKeyboardMarkup(t) if t else None) for l, t in partes]
+    return [("\n".join(l).strip(), InlineKeyboardMarkup(t) if t else None, ids) for l, t, ids in partes]
 
 
 def texto_balanco(desde: str) -> str:
@@ -165,9 +182,11 @@ async def _enviar_resumo(bot, at: datetime) -> None:
     silenciados = await asyncio.to_thread(db.silenciados, desde, ate)
     # Dia vazio não manda nada; no modo sombra, só silenciados ainda saem (para conferir o filtro)
     if itens or (NOTIF_SOMBRA and silenciados):
-        for texto, teclado in mensagens_resumo(itens, silenciados, desde, ate):
+        # Marca parte a parte: se uma mensagem falhar, a próxima volta do loop manda só o que ainda não saiu,
+        # em vez de repetir as mensagens que já chegaram
+        for texto, teclado, ids in mensagens_resumo(itens, silenciados, desde, ate):
             await _enviar(bot, texto, teclado)
-        await asyncio.to_thread(db.marcar, "resumido_em", [it["id"] for it in itens])
+            await asyncio.to_thread(db.marcar, "resumido_em", ids)
     db.set_estado("resumo_slot", slot.isoformat())
     db.set_estado("resumo_ate", ate)
 
@@ -226,7 +245,7 @@ async def _tirar_botoes(query, item_id: int, nota: str) -> None:
 
 def texto_proposta(it: dict, certo: str, prop: dict) -> tuple[str, InlineKeyboardMarkup]:
     """A proposta de ajuste depois de uma correção: o texto mostra por inteiro o que seria gravado."""
-    endereco = esc(it["endereco"])
+    endereco = html.escape(it["endereco"], quote=False)  # dentro de <code>, que não vira link
     linhas = [f"✏️ Corrigido: <b>{esc(it['remetente'])}</b> · {esc(it['assunto'][:80])} → <b>{NOME_NIVEL[certo]}</b>.",
               "Gravar um ajuste? Nada muda sem o ✅.", ""]
     botoes = []

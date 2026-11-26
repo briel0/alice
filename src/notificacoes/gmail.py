@@ -14,6 +14,7 @@ from datetime import datetime
 import httpx
 
 from src.config import NOTIF_GMAIL_TOKEN_PATH
+from src.notificacoes.db import TZ
 
 API = "https://gmail.googleapis.com/gmail/v1/users/me"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -129,7 +130,7 @@ class Gmail:
         cab = {h["name"].lower(): h["value"] for h in dados.get("payload", {}).get("headers", [])}
         nome, endereco = parseaddr(cab.get("from", ""))
         categoria = next((CATEGORIAS[r] for r in CATEGORIAS if r in rotulos and r != "CATEGORY_PERSONAL"), "principal")
-        recebido = datetime.fromtimestamp(int(dados.get("internalDate", "0")) / 1000).astimezone()
+        recebido = datetime.fromtimestamp(int(dados.get("internalDate", "0")) / 1000, TZ)
         return {
             "fonte": "gmail",
             "ext_id": msg_id,

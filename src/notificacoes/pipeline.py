@@ -41,7 +41,7 @@ def decidir(itens: list[dict], at: datetime | None = None, releitura: bool = Fal
         resultado, motivo = None, "cota do classificador esgotada hoje"
         if db.chamadas_hoje(at) < NOTIF_GEMINI_LIMITE_DIA:
             db.contar_chamada(at)
-            resultado = classificador.classificar(lote, criterios)
+            resultado = classificador.classificar(lote, criterios, at)
             motivo = "classificador indisponível"
         for j, it in enumerate(lote):
             if resultado:
